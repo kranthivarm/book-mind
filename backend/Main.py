@@ -28,6 +28,8 @@ app.add_middleware(
     allow_headers=["*"],          
 )
 
+app.include_router(upload.router, prefix="/api", tags=["Upload"])
+app.include_router(query.router,  prefix="/api", tags=["Query"])
 
 
 @app.get("/", tags=["Health"])
