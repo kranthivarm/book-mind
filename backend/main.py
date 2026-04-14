@@ -1,7 +1,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import upload, query
+from routers import upload, query , temp_testing
 import logging
 
 # All services logger.info/error ; console print
@@ -30,6 +30,7 @@ app.add_middleware(
 
 app.include_router(upload.router, prefix="/api", tags=["Upload"])
 app.include_router(query.router,  prefix="/api", tags=["Query"])
+app.include_router(temp_testing.router, prefix="/api", tags=["temp_testing"])
 
 
 @app.get("/", tags=["Health"])

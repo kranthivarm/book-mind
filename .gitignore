@@ -14,6 +14,10 @@ build/
 .env
 .env.*
 *.local
+
+
+chroma_db/
+
  
 __pycache__/
 *.pyc
@@ -27,6 +31,11 @@ venv/
 .python-version
 pip-log.txt
 pip-delete-this-directory.txt
+
+
+.DS_Store
+
+
  
 target/
 *.class

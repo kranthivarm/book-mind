@@ -104,6 +104,29 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Failed to delete book {book_id}: {e}")
             return False
+        
 
+
+    #for testing db; 
+    def testing(self,book_id:str)-> None:
+        collection =self._get_collection(book_id)
+        total = collection.count()
+        logger.info(f"Total chunks: {total}")
+
+        results = collection.get(
+            include=["documents", "metadatas", "embeddings"]
+        )        
+        for i in range(len(results["ids"])):
+            logger.info(f"ID: {results['ids'][i]}")
+            logger.info(f"Text: {results['documents'][i][:100]}")  # preview
+            logger.info(f"Metadata: {results['metadatas'][i]}")
+            logger.info(f"Embedding (first 5 values): {results['embeddings'][i][:5]}")        
+            logger.info("-" * 50)
+
+    #for testing only
+    def list_books(self):
+        collections = self._client.list_collections()
+
+        return [col.name for col in collections]
 
 vector_store = VectorStore()
