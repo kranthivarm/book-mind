@@ -54,3 +54,10 @@ target/
 coverage/
 htmlcov/
 .pytest_cache/
+
+
+
+# AI / ML
+.cache/
+huggingface/
+transformers/
