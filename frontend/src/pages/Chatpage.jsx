@@ -4,7 +4,7 @@ import SourcesPanel from "../components/SourcesPanel";
 import "../styles/pages/Chatpage.css";
 
 export default function ChatPage({ bookId, bookName, bookStats, onChangeBook }) {
-  // ── State ──────────────────────────────────────────────────────────────────
+  //   State 
   const [messages, setMessages]     = useState([]);       // all chat messages
   const [question, setQuestion]     = useState("");       // current input value
   const [isLoading, setIsLoading]   = useState(false);    // waiting for AI
@@ -20,7 +20,7 @@ export default function ChatPage({ bookId, bookName, bookStats, onChangeBook }) 
   // Focus input on mount
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // ── Send question ──────────────────────────────────────────────────────────
+  //  Send question 
   const handleSend = async () => {
     const q = question.trim();
     if (!q || isLoading) return;

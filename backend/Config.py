@@ -18,10 +18,15 @@ class Settings(BaseSettings):
     
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
+    RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"    
+    # RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-12-v2"  # 12-layer, more accurate
+
     
     CHUNK_SIZE: int = 800
     CHUNK_OVERLAP: int = 150
 
+
+    RERANK_CANDIDATES: int = 15 
     TOP_K_RESULTS: int = 5
 
     
