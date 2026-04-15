@@ -1,0 +1,294 @@
+/* pages/UploadPage.css */
+
+.upload-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(145deg, var(--white) 0%, var(--pink-50) 60%, var(--pink-100) 100%);
+}
+
+/* ── Decorative blobs ──────────────────────────────────────────────────────── */
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  opacity: 0.35;
+}
+.blob-1 {
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, var(--pink-200), transparent 70%);
+  top: -150px; right: -150px;
+  animation: pulse-ring 8s ease-in-out infinite;
+}
+.blob-2 {
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, var(--pink-100), transparent 70%);
+  bottom: -100px; left: -100px;
+  animation: pulse-ring 10s ease-in-out infinite reverse;
+}
+
+/* ── Card ──────────────────────────────────────────────────────────────────── */
+.upload-container {
+  background: var(--white);
+  border-radius: var(--radius-xl);
+  padding: 48px 44px;
+  width: 100%;
+  max-width: 500px;
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--pink-100);
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────────── */
+.upload-header {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.logo-mark {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+
+.upload-title {
+  font-family: var(--font-display);
+  font-size: 36px;
+  color: var(--gray-900);
+  letter-spacing: -0.5px;
+  margin-bottom: 10px;
+}
+
+.upload-subtitle {
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.7;
+}
+.upload-subtitle em {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* ── Drop Zone ─────────────────────────────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed var(--pink-200);
+  border-radius: var(--radius-lg);
+  padding: 36px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition);
+  background: var(--pink-50);
+  margin-bottom: 20px;
+}
+.drop-zone:hover,
+.drop-zone:focus {
+  border-color: var(--pink-400);
+  background: var(--pink-100);
+  outline: none;
+}
+.drop-zone.drag-over {
+  border-color: var(--accent);
+  background: var(--pink-100);
+  transform: scale(1.01);
+  box-shadow: 0 0 0 4px var(--pink-100);
+}
+.drop-zone.has-file {
+  cursor: default;
+  border-style: solid;
+  border-color: var(--pink-300);
+  background: var(--white);
+}
+
+/* Empty drop zone */
+.drop-icon {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: var(--pink-100);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px;
+  color: var(--pink-400);
+}
+.drop-text {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--gray-700);
+  margin-bottom: 6px;
+}
+.drop-subtext {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.drop-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.drop-limit {
+  font-size: 12px;
+  color: var(--gray-400);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+/* File selected state */
+.file-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+}
+.file-icon { font-size: 32px; flex-shrink: 0; }
+.file-info { flex: 1; min-width: 0; }
+.file-name {
+  font-weight: 600;
+  color: var(--gray-900);
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-size {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.file-remove {
+  background: var(--pink-100);
+  border: none;
+  color: var(--accent);
+  font-size: 14px;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+.file-remove:hover { background: var(--pink-200); }
+
+/* ── Error ─────────────────────────────────────────────────────────────────── */
+.upload-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fff2f5;
+  border: 1px solid #ffccd8;
+  border-radius: var(--radius-md);
+  color: #c0385a;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+
+/* ── Success ───────────────────────────────────────────────────────────────── */
+.upload-success {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, var(--pink-50), var(--white));
+  border: 1.5px solid var(--pink-200);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+.success-icon {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.success-title {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 15px;
+}
+.success-stats {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ── Progress ──────────────────────────────────────────────────────────────── */
+.progress-wrap {
+  margin-bottom: 16px;
+}
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gray-500);
+  margin-bottom: 8px;
+}
+.progress-bar {
+  height: 6px;
+  background: var(--pink-100);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--pink-400), var(--pink-500));
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+}
+.progress-sub {
+  font-size: 12px;
+  color: var(--gray-400);
+  text-align: center;
+}
+
+/* ── Upload button ─────────────────────────────────────────────────────────── */
+.upload-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 14px;
+  font-size: 16px;
+  margin-bottom: 32px;
+}
+
+/* ── How it works ──────────────────────────────────────────────────────────── */
+.how-it-works {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding-top: 24px;
+  border-top: 1px solid var(--gray-100);
+  flex-wrap: wrap;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.step-num {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--pink-100);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.step-sep {
+  color: var(--pink-300);
+  font-size: 14px;
+}

@@ -1,78 +1,44 @@
 import { useState } from "react";
+import UploadPage from "./pages/UploadPage";
+import ChatPage from "./pages/Chatpage";
+import "./styles/global.css";
 
-function App() {
-  const [file, setFile] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
+export default function App() {  
+  const [page, setPage] = useState("home");
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files?.[0];
+  const [bookId, setBookId] = useState(null);
+  const [bookName, setBookName] = useState("");
+  const [bookStats, setBookStats] = useState(null); // { total_pages, total_chunks }
 
-    if (!selectedFile) return;
-
-    // Only allow PDF
-    if (selectedFile.type !== "application/pdf") {
-      alert("Please upload a PDF file only");
-      return;
-    }
-
-    setFile(selectedFile);
-    setMessage(""); // reset message
+  // Called by UploadPage after successful upload
+  const handleUploadSuccess = (data) => {
+    setBookId(data.book_id);
+    setBookName(data.filename);
+    setBookStats({ totalPages: data.total_pages, totalChunks: data.total_chunks });
+    setPage("chat");
   };
 
-  const handleUpload = async () => {
-    if (!file) {
-      alert("Please select a file first");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      setLoading(true);
-      setMessage("");
-
-      const response = await fetch("http://localhost:8000/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error("Upload failed");
-      }
-
-      const data = await response.json();
-
-      setMessage(" File uploaded successfully!");
-      console.log(data);
-    } catch (error) {
-      console.error(error);
-      setMessage(" Error uploading file");
-    } finally {
-      setLoading(false);
-    }
+  // Called by ChatPage "← Change Book" button
+  const handleChangeBook = () => {
+    setBookId(null);
+    setBookName("");
+    setBookStats(null);
+    setPage("home");
   };
 
   return (
-    <div style={{ padding: "40px", fontFamily: "Arial" }}>
-      <h2>Upload PDF</h2>
-
-      <input
-        type="file"
-        accept="application/pdf"
-        onChange={handleFileChange}
-      />
-
-      <br /><br />
-
-      <button onClick={handleUpload} disabled={loading}>
-        {loading ? "Uploading..." : "Upload"}
-      </button>
-
-      <p>{message}</p>
+    <div className="app-root">
+      {page === "home" && (
+        <UploadPage onUploadSuccess={handleUploadSuccess} />
+      )}
+      {page === "chat" && (
+        <ChatPage
+          bookId={bookId}
+          bookName={bookName}
+          bookStats={bookStats}
+          onChangeBook={handleChangeBook}
+        />
+      )}
     </div>
   );
 }
-
-export default App;
