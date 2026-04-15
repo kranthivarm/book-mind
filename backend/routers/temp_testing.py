@@ -1,36 +1,31 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
-from models.schemas import UploadResponse
-from service.Pdf_service import process_pdf
-from service.Embedding_service import embedding_service
+from fastapi import APIRouter, HTTPException, status
 from service.Vector_store import vector_store
-from Config import settings
-import uuid
 import logging
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 
-@router.post(
-    "/testing",
-   description="just for tesating api working"
-)
-async def testing ():
+@router.get("/stats", description="Collection stats — all books in the shared collection.Returns total chunk count and per-book breakdown.Useful for debugging and monitoring.")
+async def collection_stats():
+    
     try:
-        listOfBooks=vector_store.list_books();
-        logger.info(listOfBooks[0]);
-
-        vector_store.testing(listOfBooks[0].replace("book_",""))
-
-        return {
-            # "message": f"Printed DB contents for book_id={book_id} (check logs)"
-        }
-    
+        return vector_store.collection_stats()
     except Exception as e:
-        logger.error(f"Vector store failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to store book in database. Please try again."
-        )        
-    
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/books", description="List all book_ids in the collection")
+async def list_books():
+    try:
+        return {"books": vector_store.list_books()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/books/{book_id}", description="Delete a book from the collection")
+async def delete_book(book_id: str):
+    success = vector_store.delete_book(book_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Book {book_id} not found")
+    return {"message": f"Book {book_id} deleted successfully"}
