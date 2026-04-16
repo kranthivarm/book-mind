@@ -18,7 +18,8 @@ export default function UploadPage({ onUploadSuccess }) {
     if (!f) return "No file selected.";
     if (f.type !== "application/pdf" && !f.name.endsWith(".pdf"))
       return "Only PDF files are supported.";
-    if (f.size > 50 * 1024 * 1024)
+    // if (f.size > 50 * 1024 * 1024)
+    if (f.size > 200 * 1024 * 1024)
       return "File is too large. Maximum size is 50MB.";
     return null; // null = no error
   };

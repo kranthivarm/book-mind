@@ -33,7 +33,9 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIR: str = "./chroma_db"
 
     
-    MAX_FILE_SIZE_MB: int = 50
+    # MAX_FILE_SIZE_MB: int = 50
+    MAX_FILE_SIZE_MB: int = 200
+
 
     class Config:
         env_file = ".env"

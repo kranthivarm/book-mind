@@ -1,330 +1,312 @@
-
-import fitz  # PyMuPDF : fitz is the internal name
+import fitz          # PyMuPDF
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Tuple, Optional
 from Config import settings
 
-
-
-# extracting pages and headings detections
+ 
 _HEADING_PATTERNS = [
-    r"^(Chapter|CHAPTER|Unit|UNIT|Section|SECTION|Part|PART)\s+\w+",  
-    r"^\d+[\.\)]\s+[A-Z]",           # 1. Introduction  /  1) Overview
-    r"^\d+\.\d+\s+[A-Z]",            # 1.2 Subsection
-    r"^[A-Z][A-Z\s]{4,40}$",         # ALL CAPS SHORT LINE  (e.g. INTRODUCTION)
-    r"^[A-Z][a-z].*:$",              # Title case ending with colon
+    r"^(Chapter|CHAPTER|Unit|UNIT|Section|SECTION|Part|PART)\s+\w+",
+    r"^\d+[\.\)]\s+[A-Z]",
+    r"^\d+\.\d+\s+[A-Z]",
+    r"^[A-Z][A-Z\s]{4,40}$",
+    r"^[A-Z][a-z].*:$",
 ]
 _HEADING_RE = re.compile("|".join(_HEADING_PATTERNS))
- 
- 
+
+
 def _is_heading(line: str) -> bool:
     line = line.strip()
-    if not line or len(line) > 120:  
+    if not line or len(line) > 120:
         return False
     return bool(_HEADING_RE.match(line))
 
-
-def extract_pages(file_bytes: bytes) -> List[Dict[str, Any]]:
-   
-    pdf = fitz.open(stream=file_bytes, filetype="pdf")
-    pages = []
  
-    for page_num in range(len(pdf)):
-        page = pdf[page_num]
- 
-        # get_text("blocks") gives us text grouped by visual block (paragraph-like)
-        # Each block: (x0, y0, x1, y1, text, block_no, block_type)
-        raw_blocks = page.get_text("blocks", sort=True)  # sort=True → reading order
- 
-        blocks = []
-        full_text_parts = []
- 
-        for block in raw_blocks:
-            block_text = block[4].strip()
-            if not block_text or len(block_text) < 5:
-                continue
- 
-            cleaned = _clean_block(block_text)
-            if not cleaned:
-                continue
- 
-            # Check if the first line of the block is a heading
-            first_line = cleaned.split("\n")[0].strip()
-            is_heading = _is_heading(first_line)
- 
-            blocks.append({"text": cleaned, "is_heading": is_heading})
-            full_text_parts.append(cleaned)
- 
-        if not full_text_parts:#blank pages
-            continue  
- 
-        pages.append({
-            "page_number": page_num + 1,
-            "text": "\n\n".join(full_text_parts),
-            "blocks": blocks,
-        })
- 
-    pdf.close()
-    return pages
- 
- 
-def _clean_block(text: str) -> str:  #cleaning text block     
+def _get_block_x_center(block: tuple) -> float:
+    """Returns the horizontal center of a block's bounding box."""
+    x0, x1 = block[0], block[2]
+    return (x0 + x1) / 2
 
 
-    text = re.sub(r"-\n", "", text)  # line ending - 
+def _detect_column_split(
+    blocks: List[tuple],
+    page_width: float
+) -> Optional[float]:
+    
+    page_mid = page_width / 2
 
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    # Exclude full-width blocks from column analysis
+    content_blocks = [
+        b for b in blocks
+        if (b[2] - b[0]) < page_width * 0.70  # not full-width
+        and b[4].strip()                         # has text
+    ]
 
-    text = re.sub(r" {2,}", " ", text)
+    if len(content_blocks) < 4:
+        # Too few blocks to determine layout reliably → assume single column
+        return None
 
+    x_centers = [_get_block_x_center(b) for b in content_blocks]
+
+    left_centers  = [x for x in x_centers if x < page_mid * 1.1]
+    right_centers = [x for x in x_centers if x > page_mid * 0.9]
+
+    # Need meaningful presence on BOTH sides
+    if len(left_centers) < 2 or len(right_centers) < 2:
+        return None
+
+    # Check for a real gap: rightmost left block vs leftmost right block
+    # We use block x1 (right edge) for left blocks and x0 (left edge) for right blocks
+    left_blocks  = [b for b in content_blocks if _get_block_x_center(b) < page_mid * 1.1]
+    right_blocks = [b for b in content_blocks if _get_block_x_center(b) > page_mid * 0.9]
+
+    # Max right-edge of all left-column blocks
+    max_left_x1  = max(b[2] for b in left_blocks)
+    # Min left-edge of all right-column blocks
+    min_right_x0 = min(b[0] for b in right_blocks)
+
+    # There must be a physical gap between the two columns
+    # (gap ≥ 1% of page width — even a thin gutter qualifies)
+    gap = min_right_x0 - max_left_x1
+    min_gap = page_width * 0.01
+
+    if gap < min_gap:
+        # Blocks overlap horizontally → not a clean 2-column layout
+        return None
+
+    # Split point = center of the gap
+    split_x = max_left_x1 + gap / 2
+    return split_x
+
+
+# COLUMN-AWARE BLOCK ORDERING
+
+def _is_full_width(block: tuple, page_width: float) -> bool:
+    return (block[2] - block[0]) > page_width * 0.70
+
+
+def _order_blocks_by_columns(
+    blocks: List[tuple],
+    page_width: float,
+    split_x: float
+) -> List[tuple]:
+    
+    # Sort all blocks top-to-bottom
+    sorted_blocks = sorted(blocks, key=lambda b: b[1])  # b[1] = y0
+
+    result: List[tuple]  = []
+    left_col:  List[tuple] = []
+    right_col: List[tuple] = []
+
+    def flush_columns():
+        
+        # Sort each column top→bottom independently
+        result.extend(sorted(left_col, key=lambda b: b[1]))
+        result.extend(sorted(right_col, key=lambda b: b[1]))
+        left_col.clear()
+        right_col.clear()
+
+    for block in sorted_blocks:
+        if not block[4].strip():
+            continue  # skip empty blocks
+
+        if _is_full_width(block, page_width):
+            # Full-width block: flush any pending column blocks first
+            flush_columns()
+            result.append(block)
+        elif _get_block_x_center(block) <= split_x:
+            left_col.append(block)
+        else:
+            right_col.append(block)
+
+    # Flush any remaining column blocks at end of page
+    flush_columns()
+
+    return result
+
+
+
+
+def _clean_block_text(text: str) -> str:
+    """Cleans raw text from a single PDF block."""
+    text = re.sub(r"-\n", "", text)          # fix hyphenated line-breaks
+    text = re.sub(r"\n{3,}", "\n\n", text)   # collapse excess newlines
+    text = re.sub(r" {2,}", " ", text)       # collapse spaces
     lines = [l.strip() for l in text.split("\n")]
     return "\n".join(lines).strip()
- 
 
 
-#split into paragraphs
+def extract_pages(file_bytes: bytes) -> List[Dict[str, Any]]:
+     
+    pdf = fitz.open(stream=file_bytes, filetype="pdf")
+    pages = []
+
+    for page_num in range(len(pdf)):
+        page      = pdf[page_num]
+        page_rect = page.rect
+        page_width  = page_rect.width
+        page_height = page_rect.height  # noqa: F841 (available for future use)
+
+        # Get blocks: (x0, y0, x1, y1, text, block_no, block_type)
+        # block_type 0 = text, 1 = image — we skip images
+        raw_blocks = [
+            b for b in page.get_text("blocks", sort=False)
+            if b[6] == 0 and b[4].strip()   # text blocks only, non-empty
+        ]
+
+        if not raw_blocks:
+            continue
+
+        #   Detect column layout 
+        split_x = _detect_column_split(raw_blocks, page_width)
+        layout  = "double" if split_x is not None else "single"
+
+        #   Re-order blocks for correct reading order
+        if split_x is not None:
+            ordered_blocks = _order_blocks_by_columns(raw_blocks, page_width, split_x)
+        else:
+            # Single column: just sort top→bottom (PyMuPDF order may not be perfect)
+            ordered_blocks = sorted(raw_blocks, key=lambda b: b[1])
+
+        #   Build structured block list
+        structured_blocks = []
+        full_text_parts   = []
+
+        for block in ordered_blocks:
+            cleaned = _clean_block_text(block[4])
+            if not cleaned:
+                continue
+
+            first_line = cleaned.split("\n")[0].strip()
+            is_heading = _is_heading(first_line)
+
+            structured_blocks.append({"text": cleaned, "is_heading": is_heading})
+            full_text_parts.append(cleaned)
+
+        if not full_text_parts:
+            continue
+
+        pages.append({
+            "page_number": page_num + 1,
+            "text":        "\n\n".join(full_text_parts),
+            "blocks":      structured_blocks,
+            "layout":      layout,
+        })
+
+        if layout == "double":
+            logger.info(f"  Page {page_num + 1}: 2-column layout detected (split at x={split_x:.1f})")
+
+    pdf.close()
+
+    single = sum(1 for p in pages if p["layout"] == "single")
+    double = sum(1 for p in pages if p["layout"] == "double")
+    logger.info(f"Extraction complete: {len(pages)} pages | {single} single-column, {double} two-column")
+
+    return pages
+
+
+# SEMANTIC CHUNKING 
 
 def _split_into_paragraphs(blocks: List[Dict]) -> List[Dict]:
-   
+    """Splits blocks into individual paragraph units."""
     paragraphs = []
- 
     for block in blocks:
-        raw = block["text"]
         is_heading_block = block["is_heading"]
- 
-        parts = re.split(r"\n\n+", raw)
+        parts = re.split(r"\n\n+", block["text"])
         parts = [p.strip() for p in parts if p.strip()]
- 
         for i, part in enumerate(parts):
-            # Only the first part of a heading block gets the heading flag
-            is_heading = is_heading_block and (i == 0)
             paragraphs.append({
-                "text": part,
-                "is_heading": is_heading,
+                "text":       part,
+                "is_heading": is_heading_block and (i == 0),
             })
- 
     return paragraphs
 
 
-#Group paragraphs into semantic chunks
 def _group_paragraphs_into_chunks(
     paragraphs: List[Dict],
     page_number: int,
     max_chars: int,
 ) -> List[Dict]:
-    
+    chunks       = []
+    current_parts: List[str] = []
+    current_len  = 0
+    chunk_index  = 0
 
-    chunks = []
-    current_parts = []
-    current_len = 0
-    chunk_index = 0
- 
-    def flush(extra_paragraph: Optional[str] = None):
-        """Save current_parts as a chunk, then reset."""
+    def flush():
         nonlocal chunk_index, current_parts, current_len
- 
-        parts_to_flush = current_parts[:]
-        if extra_paragraph:
-            parts_to_flush.append(extra_paragraph)
- 
-        text = "\n\n".join(parts_to_flush).strip()
-        if len(text) > 60:  # skip trivially small chunks
+        text = "\n\n".join(current_parts).strip()
+        if len(text) > 60:
             chunks.append({
-                "text": text,
+                "text":        text,
                 "page_number": page_number,
                 "chunk_index": chunk_index,
-                "char_start": 0,   # approximate; not critical after reranking
-                "char_end": len(text),
+                "char_start":  0,
+                "char_end":    len(text),
             })
             chunk_index += 1
- 
         current_parts = []
-        current_len = 0
- 
-    for i, para in enumerate(paragraphs):
+        current_len   = 0
+
+    for para in paragraphs:
         para_text = para["text"]
-        para_len = len(para_text)
- 
+        para_len  = len(para_text)
+
         if para["is_heading"] and current_parts:
             flush()
 
-            current_parts = [para_text]
-            current_len = para_len
-            continue
- 
         if current_len + para_len > max_chars and current_parts:
             flush()
- 
+
         current_parts.append(para_text)
         current_len += para_len
- 
+
     if current_parts:
         flush()
- 
-    return chunks
- 
 
-# Add contextual overlap between chunks
+    return chunks
+
 
 def _add_overlap(chunks: List[Dict], overlap_sentences: int = 2) -> List[Dict]:
-     
     if len(chunks) <= 1:
         return chunks
- 
-    updated = [chunks[0]]  # first chunk has no previous
- 
+
+    updated = [chunks[0]]
     for i in range(1, len(chunks)):
-        prev_text = chunks[i - 1]["text"]
- 
-        # Extract last N sentences from previous chunk
-        sentences = re.split(r"(?<=[.!?])\s+", prev_text.strip())
-        tail_sentences = sentences[-overlap_sentences:]
-        overlap_text = " ".join(tail_sentences).strip()
- 
-        if overlap_text:
-            # Prefix with a clear marker so LLM knows this is bridging context
-            new_text = f"[Context from previous section: {overlap_text}]\n\n{chunks[i]['text']}"
-        else:
-            new_text = chunks[i]["text"]
- 
+        prev_text      = chunks[i - 1]["text"]
+        sentences      = re.split(r"(?<=[.!?])\s+", prev_text.strip())
+        tail           = " ".join(sentences[-overlap_sentences:]).strip()
+        new_text       = (
+            f"[Context from previous section: {tail}]\n\n{chunks[i]['text']}"
+            if tail else chunks[i]["text"]
+        )
         updated.append({**chunks[i], "text": new_text})
- 
+
     return updated
- 
 
 
 def chunk_pages(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    
     all_chunks = []
- 
     for page_data in pages:
-        blocks = page_data.get("blocks", [])
+        blocks     = page_data.get("blocks", [])
         if not blocks:
             continue
- 
-        paragraphs = _split_into_paragraphs(blocks)
- 
+        paragraphs  = _split_into_paragraphs(blocks)
         page_chunks = _group_paragraphs_into_chunks(
-            paragraphs=paragraphs,
-            page_number=page_data["page_number"],
-            max_chars=settings.CHUNK_SIZE,
+            paragraphs, page_data["page_number"], settings.CHUNK_SIZE
         )
- 
-        page_chunks = _add_overlap(page_chunks, overlap_sentences=2)
- 
+        page_chunks = _add_overlap(page_chunks)
         all_chunks.extend(page_chunks)
- 
-    # Re-index chunk_index globally (was per-page)
+
     for i, chunk in enumerate(all_chunks):
         chunk["chunk_index"] = i
- 
+
     return all_chunks
- 
- 
-def process_pdf(file_bytes: bytes):   
-    pages = extract_pages(file_bytes)
+
+
+def process_pdf(file_bytes: bytes):
+    pages  = extract_pages(file_bytes)
     chunks = chunk_pages(pages)
     return chunks, len(pages)
- 
 
 
-
-# def extract_text_from_pdf(file_bytes: bytes) -> List[Dict[str, Any]]: # reads the rawBytes 
-    
-#     pages = []    
-#     pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
-
-#     for page_num in range(len(pdf_document)):
-#         page = pdf_document[page_num]
-        
-#         raw_text = page.get_text("text")    
-#         cleaned_text = clean_text(raw_text)
-        
-#         if len(cleaned_text.strip()) < 50:
-#             continue
-
-#         pages.append({
-#             "page_number": page_num + 1, 
-#             "text": cleaned_text
-#         })
-
-#     pdf_document.close()
-#     return pages
-
-
-# def clean_text(text: str) -> str:
-    
-#     text = re.sub(r"-\n", "", text)
-#     text = re.sub(r"\n{3,}", "\n\n", text)
-#     text = re.sub(r" {2,}", " ", text)
-
-#     lines = [line.strip() for line in text.split("\n")]
-#     text = "\n".join(lines)
-
-#     return text.strip()
-
-
-# def chunk_pages(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    
-#     chunks = []
-#     chunk_size = settings.CHUNK_SIZE
-#     chunk_overlap = settings.CHUNK_OVERLAP
-#     step = chunk_size - chunk_overlap  # How far the window slides each time
-
-#     for page_data in pages:
-#         page_text = page_data["text"]
-#         page_number = page_data["page_number"]
-
-#         # If the entire page fits in one chunk, no splitting needed
-#         if len(page_text) <= chunk_size:
-#             chunks.append({
-#                 "text": page_text,
-#                 "page_number": page_number,
-#                 "chunk_index": 0,
-#                 "char_start": 0,
-#                 "char_end": len(page_text)
-#             })
-#             continue
-
-#         # Sliding window chunking
-#         chunk_index = 0
-#         start = 0
-
-#         while start < len(page_text):
-#             end = start + chunk_size
-
-#             # Try to break at a sentence boundary (". ") instead of mid-word
-#             if end < len(page_text):
-#                 # Look for the last period within the last 100 chars of the chunk
-#                 last_period = page_text.rfind(". ", end - 100, end)
-#                 if last_period != -1:
-#                     end = last_period + 1  # Include the period
-
-#             chunk_text = page_text[start:end].strip()
-
-#             # Only add non-trivial chunks
-#             if len(chunk_text) > 50:
-#                 chunks.append({
-#                     "text": chunk_text,
-#                     "page_number": page_number,
-#                     "chunk_index": chunk_index,
-#                     "char_start": start,
-#                     "char_end": end
-#                 })
-#                 chunk_index += 1
-
-#             # If we already reached the end, stop
-#             if end >= len(page_text):
-#                 break
-
-#             start += step  # Slide the window forward
-
-#     return chunks
-
-
-# def process_pdf(file_bytes: bytes) -> tuple[List[Dict], int]:
-#     # Full pipeline: bytes → pages → chunks.
-#     # Returns:    (chunks, total_pages)    
-#     pages = extract_text_from_pdf(file_bytes)
-#     chunks = chunk_pages(pages)
-#     return chunks, len(pages)
+import logging
+logger = logging.getLogger(__name__)
