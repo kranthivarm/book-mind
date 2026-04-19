@@ -1,25 +1,46 @@
-import { useState, useRef, useEffect } from "react";
-import { streamQuestion } from "../services/api";
+// pages/ChatPage.jsx
+import { useState, useRef, useEffect, useCallback } from "react";
+import { getChatMessages, streamQuestion } from "../services/api";
 import SourcesPanel from "../components/SourcesPanel";
 import "../styles/pages/Chatpage.css";
 
-export default function ChatPage({ bookId, bookName, bookStats, onChangeBook }) {
+export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsChange }) {
   const [messages,   setMessages]   = useState([]);
   const [question,   setQuestion]   = useState("");
   const [isLoading,  setIsLoading]  = useState(false);
-  const [statusText, setStatusText] = useState(""); // "Searching…" / "Generating…"
+  const [statusText, setStatusText] = useState("");
+  const [loadingHistory, setLoadingHistory] = useState(true);
 
   const messagesEndRef = useRef(null);
   const inputRef       = useRef(null);
+
+  // Load message history from Postgres when chat opens
+  useEffect(() => {
+    setLoadingHistory(true);
+    getChatMessages(chatId)
+      .then(msgs => {
+        // Map DB format to local display format
+        setMessages(msgs.map(m => ({
+          id:       m.message_id,
+          role:     m.role,
+          text:     m.text,
+          sources:  m.sources,
+          streaming: false,
+        })));
+      })
+      .catch(console.error)
+      .finally(() => {
+        setLoadingHistory(false);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView(), 80);
+      });
+    inputRef.current?.focus();
+  }, [chatId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
-
-  //  Streaming send
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     const q = question.trim();
     if (!q || isLoading) return;
 
@@ -27,190 +48,137 @@ export default function ChatPage({ bookId, bookName, bookStats, onChangeBook }) 
     setIsLoading(true);
     setStatusText("");
 
-    // Add user message immediately
-    const userMsgId = Date.now();
-    const aiMsgId   = Date.now() + 1;
+    const aiMsgLocalId = `ai_${Date.now()}`;
 
     setMessages(prev => [
       ...prev,
-      { id: userMsgId, role: "user", text: q },
-      // AI message starts empty — we'll append tokens to it
-      { id: aiMsgId, role: "ai", text: "", sources: null, streaming: true },
+      { id: `u_${Date.now()}`, role: "user",  text: q,  streaming: false },
+      { id: aiMsgLocalId,       role: "ai",    text: "",  streaming: true, sources: null },
     ]);
 
-    await streamQuestion(bookId, q, {
+    await streamQuestion(bookId, q, chatId, {
+      onStatus: setStatusText,
 
-      // "Searching your textbook…" / "Generating answer…"
-      onStatus: (msg) => {
-        setStatusText(msg);
-      },
-
-      // Each token: append to the AI message's text
-      // We use the functional form of setMessages so we always have latest state
+      // Append each token to the AI message
       onToken: (token) => {
         setMessages(prev =>
-          prev.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, text: msg.text + token }
-              : msg
+          prev.map(m =>
+            m.id === aiMsgLocalId ? { ...m, text: m.text + token } : m
           )
         );
       },
 
-      // Sources arrive once, after the full answer
       onSources: (sources) => {
         setMessages(prev =>
-          prev.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, sources }
-              : msg
-          )
+          prev.map(m => m.id === aiMsgLocalId ? { ...m, sources } : m)
         );
       },
 
-      // Stream finished
       onDone: () => {
         setMessages(prev =>
-          prev.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, streaming: false }
-              : msg
-          )
+          prev.map(m => m.id === aiMsgLocalId ? { ...m, streaming: false } : m)
         );
         setIsLoading(false);
         setStatusText("");
+        onChatsChange();  // refresh sidebar preview
         inputRef.current?.focus();
       },
 
-      // Error
       onError: (errMsg) => {
         setMessages(prev =>
-          prev.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, text: `⚠ ${errMsg}`, isError: true, streaming: false }
-              : msg
+          prev.map(m =>
+            m.id === aiMsgLocalId
+              ? { ...m, text: `⚠ ${errMsg}`, isError: true, streaming: false }
+              : m
           )
         );
         setIsLoading(false);
         setStatusText("");
       },
     });
-  };
+  }, [question, isLoading, bookId, chatId, onChatsChange]);
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const shortName = bookName.length > 30 ? bookName.slice(0, 27) + "…" : bookName;
+  const shortName = bookName?.length > 28 ? bookName.slice(0, 25) + "…" : bookName;
 
   return (
     <div className="chat-page">
-
-      {/* Header */}
       <header className="chat-header">
-        <div className="chat-header-left">
-          <div className="header-logo">📖</div>
-          <div className="header-book-info">
-            <span className="header-app-name">BookMind</span>
-            <span className="header-book-name" title={bookName}>{shortName}</span>
+        <div className="chat-header-book">
+          <span className="chat-header-icon">📄</span>
+          <div>
+            <p className="chat-header-label">Chatting with</p>
+            <p className="chat-header-name" title={bookName}>{shortName}</p>
           </div>
         </div>
         {bookStats && (
-          <div className="header-stats">
-            <div className="stat-pill"><span className="stat-icon">📄</span>{bookStats.totalPages} pages</div>
-            <div className="stat-pill"><span className="stat-icon">🔍</span>{bookStats.totalChunks} chunks</div>
+          <div className="header-pills">
+            <span className="header-pill">📖 {bookStats.totalPages} pages</span>
+            <span className="header-pill">🔍 {bookStats.totalChunks} chunks</span>
           </div>
         )}
-        <button className="btn-ghost" onClick={onChangeBook}>← Change Book</button>
       </header>
 
-      {/* Message list */}
       <div className="chat-messages">
-        {messages.length === 0 && (
+        {loadingHistory ? (
+          <div className="chat-loading">
+            <div className="typing-indicator"><span/><span/><span/></div>
+            <p>Loading history…</p>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="chat-empty fade-up">
             <div className="empty-icon">💬</div>
             <h2 className="empty-title">Ask anything about your textbook</h2>
-            <p className="empty-sub">
-              The AI will answer <strong>only</strong> from <em>{shortName}</em>
-            </p>
+            <p className="empty-sub">Answers come only from <em>{shortName}</em></p>
             <div className="suggestions">
-              {[
-                "What is the main topic of this book?",
-                "Explain the key concepts from chapter 1.",
-                "Summarise the most important points.",
-              ].map(s => (
+              {["What is the main topic?", "Explain chapter 1.", "Give key definitions."].map(s => (
                 <button key={s} className="suggestion-chip"
-                  onClick={() => { setQuestion(s); inputRef.current?.focus(); }}>
-                  {s}
-                </button>
+                  onClick={() => { setQuestion(s); inputRef.current?.focus(); }}>{s}</button>
               ))}
             </div>
           </div>
-        )}
-
-        {messages.map(msg => (
-          <div key={msg.id} className={`message-row ${msg.role}`}>
-            <div className={`msg-avatar ${msg.role}`}>
-              {msg.role === "user" ? "👤" : "🤖"}
-            </div>
-            <div className="msg-content">
-              <div className={`msg-bubble ${msg.role} ${msg.isError ? "error" : ""}`}>
-                {/* Show typing indicator only while streaming AND no text yet */}
-                {msg.streaming && !msg.text ? (
-                  <div className="typing-indicator">
-                    <span /><span /><span />
-                  </div>
-                ) : (
-                  <>
-                    <p className="msg-text">{msg.text}</p>
-                    {/* Blinking cursor while streaming */}
-                    {msg.streaming && <span className="stream-cursor">▌</span>}
-                  </>
+        ) : (
+          messages.map((msg, idx) => (
+            <div key={msg.id || idx} className={`message-row ${msg.role}`}>
+              <div className={`msg-avatar ${msg.role}`}>{msg.role === "user" ? "👤" : "🤖"}</div>
+              <div className="msg-content">
+                <div className={`msg-bubble ${msg.role} ${msg.isError ? "error" : ""}`}>
+                  {msg.streaming && !msg.text ? (
+                    <div className="typing-indicator"><span/><span/><span/></div>
+                  ) : (
+                    <>
+                      <p className="msg-text">{msg.text}</p>
+                      {msg.streaming && <span className="stream-cursor">▌</span>}
+                    </>
+                  )}
+                </div>
+                {!msg.streaming && msg.role === "ai" && msg.sources?.length > 0 && (
+                  <SourcesPanel sources={msg.sources} />
                 )}
               </div>
-              {/* Sources appear after streaming is done */}
-              {!msg.streaming && msg.role === "ai" && msg.sources?.length > 0 && (
-                <SourcesPanel sources={msg.sources} />
-              )}
             </div>
-          </div>
-        ))}
-
+          ))
+        )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input bar */}
       <div className="chat-input-bar">
-        {/* Status text shown above input while loading */}
-        {statusText && (
-          <p className="stream-status fade-in">{statusText}</p>
-        )}
+        {statusText && <p className="stream-status">{statusText}</p>}
         <div className="input-wrap">
-          <textarea
-            ref={inputRef}
-            className="chat-input"
-            placeholder="Ask a question about your textbook…"
-            value={question}
+          <textarea ref={inputRef} className="chat-input"
+            placeholder="Ask a question…" value={question}
             onChange={e => setQuestion(e.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={1}
-            disabled={isLoading}
-          />
+            onKeyDown={handleKeyDown} rows={1} disabled={isLoading} />
           <button className="send-btn" onClick={handleSend}
-            disabled={!question.trim() || isLoading} title="Send (Enter)">
-            {isLoading
-              ? <span className="send-spinner" />
-              : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2.5">
-                  <line x1="22" y1="2" x2="11" y2="13" />
-                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
-              )
-            }
+            disabled={!question.trim() || isLoading}>
+            {isLoading ? <span className="send-spinner"/> :
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>}
           </button>
         </div>
         <p className="input-hint">Enter to send · Shift+Enter for new line</p>

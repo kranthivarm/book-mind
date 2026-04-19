@@ -1,162 +1,129 @@
+// services/api.js
 const BASE_URL = "http://localhost:8000/api";
 
-/**
- * Uploads a PDF file to the backend.
- * Uses FormData because we're sending a binary file (multipart/form-data).
- * DO NOT set Content-Type header manually — browser sets it with boundary.
- *
- * @param {File} file - The PDF File object from the file input
- * @param {Function} onProgress - Optional callback(percent) for upload progress
- * @returns {Promise<{book_id, filename, total_pages, total_chunks, message}>}
- */
+//   Upload  
 export async function uploadBook(file, onProgress) {
   const formData = new FormData();
-  formData.append("file", file); // key "file" matches FastAPI's parameter name
-
-  // Use XMLHttpRequest instead of fetch to get upload progress events
+  formData.append("file", file);
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-
-    // Track upload progress (0–100%)
     xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable && onProgress) {
-        const percent = Math.round((e.loaded / e.total) * 100);
-        onProgress(percent);
-      }
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
     });
-
     xhr.addEventListener("load", () => {
       const data = JSON.parse(xhr.responseText);
-      if (xhr.status === 201) {
-        resolve(data);
-      } else {
-        // Backend sends { detail: "..." } for errors
-        reject(new Error(data.detail || "Upload failed"));
-      }
+      xhr.status === 201 ? resolve(data) : reject(new Error(data.detail || "Upload failed"));
     });
-
-    xhr.addEventListener("error", () => {
-      reject(new Error("Network error. Is the backend running on port 8000?"));
-    });
-
+    xhr.addEventListener("error", () => reject(new Error("Network error.")));
     xhr.open("POST", `${BASE_URL}/upload`);
     xhr.send(formData);
   });
 }
 
-/**
- * Sends a question to the RAG pipeline.
- 
- * @param {string} bookId - The book_id returned by uploadBook
- * @param {string} question - The student's question
- * @returns {Promise<{answer, question, sources: [{page_number, chunk_index, text_preview, relevance_score}]}>}
- */
-export async function askQuestion(bookId, question) {
-  const res = await fetch(`${BASE_URL}/query`, {
+//  Chat CRUD (Postgres-backed)
+
+export async function createChat({ bookId, bookName, totalPages, totalChunks }) {
+  const res = await fetch(`${BASE_URL}/chats`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ book_id: bookId, question }),
+    body: JSON.stringify({
+      book_id: bookId, book_name: bookName,
+      total_pages: totalPages, total_chunks: totalChunks,
+    }),
   });
-
   const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error(data.detail || "Failed to get answer");
-  }
-
-  return data;
+  if (!res.ok) throw new Error(data.detail || "Failed to create chat");
+  return data;  // { chat_id, book_id, book_name, ... }
 }
 
+export async function getAllChats() {
+  const res = await fetch(`${BASE_URL}/chats`);
+  if (!res.ok) throw new Error("Failed to load chats");
+  return res.json();  // [{chat_id, book_name, last_message, ...}]
+}
 
+export async function getChatMessages(chatId) {
+  const res = await fetch(`${BASE_URL}/chats/${chatId}/messages`);
+  if (!res.ok) throw new Error("Failed to load messages");
+  return res.json();  // [{message_id, role, text, sources, created_at}]
+}
 
+export async function deleteChat(chatId) {
+  await fetch(`${BASE_URL}/chats/${chatId}`, { method: "DELETE" });
+}
 
+//   Streaming query 
 
-//  Streaming query 
-/**
- * Sends a question and reads the SSE stream from /query/stream.
- *
- * HOW SSE READING WORKS IN THE BROWSER:
- *   fetch() returns a Response whose body is a ReadableStream.
- *   We attach a TextDecoder and read the stream chunk by chunk.
- *   Each chunk may contain one or more SSE events separated by "\n\n".
- *   We split on "\n\n", parse each event's JSON, and call the right callback.
- *
- * @param {string}   bookId
- * @param {string}   question
- * @param {object}   callbacks
- *   callbacks.onStatus(message)    — "Searching textbook…" / "Generating…"
- *   callbacks.onToken(text)        — called for each token from the LLM
- *   callbacks.onSources(sources)   — called once with the final sources array
- *   callbacks.onDone()             — called when stream is complete
- *   callbacks.onError(message)     — called if something goes wrong
- */
-
-export async function streamQuestion(bookId, question, callbacks) {
+export async function streamQuestion(bookId, question, chatId, callbacks) {
   const { onStatus, onToken, onSources, onDone, onError } = callbacks;
- 
+
   let response;
   try {
     response = await fetch(`${BASE_URL}/query/stream`, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ book_id: bookId, question }),
+      body: JSON.stringify({ book_id: bookId, question, chat_id: chatId }),
     });
-  } catch (err) {
+  } catch {
     onError?.("Network error. Is the backend running?");
     return;
   }
- 
+
   if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    onError?.(errData.detail || `Request failed (${response.status})`);
+    const err = await response.json().catch(() => ({}));
+    onError?.(err.detail || `Request failed (${response.status})`);
     return;
   }
- 
-  //   Read the stream  
+
   const reader  = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
-  let   buffer  = "";   // accumulates partial chunks between reads
- 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
- 
-    // Decode the incoming bytes and add to buffer
-    buffer += decoder.decode(value, { stream: true });
- 
-    // SSE events are separated by double newline "\n\n"
-    // Split on it to get individual events
-    const events = buffer.split("\n\n");
- 
-    // The last element may be a partial event (stream cut mid-event)
-    // Keep it in the buffer for the next read
-    buffer = events.pop();
- 
-    for (const event of events) {
-      // Each SSE event looks like:  "data: {json}"
-      // Strip the "data: " prefix, then parse JSON
-      const line = event.trim();
-      if (!line.startsWith("data: ")) continue;
- 
-      let payload;
-      try {
-        payload = JSON.parse(line.slice(6));  // slice off "data: "
-      } catch {
-        continue;  // malformed JSON — skip
-      }
- 
-      // Route to the right callback based on event type
-      switch (payload.type) {
-        case "status":  onStatus?.(payload.content);  break;
-        case "token":   onToken?.(payload.content);   break;
-        case "sources": onSources?.(payload.content); break;
-        case "done":    onDone?.();                   return;
-        case "error":   onError?.(payload.content);   return;
+  let   buffer  = "";
+  let   tokenBuffer  = "";
+  let   rafId        = null;
+  let   streamDone   = false;
+
+  function flushTokens() {
+    if (tokenBuffer) { onToken?.(tokenBuffer); tokenBuffer = ""; }
+    if (!streamDone) rafId = requestAnimationFrame(flushTokens);
+  }
+  rafId = requestAnimationFrame(flushTokens);
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop();
+
+      for (const event of events) {
+        const line = event.trim();
+        if (!line.startsWith("data: ")) continue;
+        let payload;
+        try { payload = JSON.parse(line.slice(6)); } catch { continue; }
+
+        switch (payload.type) {
+          case "status":  onStatus?.(payload.content); break;
+          case "token":   tokenBuffer += payload.content; break;
+          case "sources": onSources?.(payload.content); break;
+          case "done":
+            streamDone = true;
+            cancelAnimationFrame(rafId);
+            if (tokenBuffer) { onToken?.(tokenBuffer); tokenBuffer = ""; }
+            onDone?.();
+            return;
+          case "error":
+            streamDone = true;
+            cancelAnimationFrame(rafId);
+            onError?.(payload.content);
+            return;
+        }
       }
     }
+  } finally {
+    streamDone = true;
+    cancelAnimationFrame(rafId);
+    if (tokenBuffer) { onToken?.(tokenBuffer); tokenBuffer = ""; }
+    onDone?.();
   }
- 
-  // Stream ended without a "done" event (shouldn't happen, but handle it)
-  onDone?.();
 }
- 

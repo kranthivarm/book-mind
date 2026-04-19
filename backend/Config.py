@@ -1,6 +1,3 @@
-
-
-
 from pydantic_settings import BaseSettings # to automaticaly read from env
 from pydantic import Field
 
@@ -10,6 +7,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = Field(..., description="Your Groq API key from console.groq.com")
 
 
+    DATABASE_URL: str = Field(..., description="PostgreSQL connection string")
 
     LLM_MODEL: str = "llama-3.1-8b-instant"   # Fast & smart Groq model
     LLM_TEMPERATURE: float = 0.1              # Low = more factual, less creative

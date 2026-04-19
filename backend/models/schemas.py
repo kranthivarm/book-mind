@@ -1,33 +1,75 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional, Any
+from datetime import datetime
 
 
-class UploadResponse(BaseModel):    
-    book_id: str = Field(..., description="Unique ID for this book in ChromaDB")
-    filename: str = Field(..., description="Original filename of the uploaded PDF")
-    total_pages: int = Field(..., description="Number of pages extracted from the PDF")
-    total_chunks: int = Field(..., description="Number of text chunks stored in vector DB")
-    message: str = Field(..., description="Human-readable success message")
+#   Existing schemas 
 
+class UploadResponse(BaseModel):
+    book_id:      str
+    filename:     str
+    total_pages:  int
+    total_chunks: int
+    message:      str
 
-class QueryRequest(BaseModel):    
-    book_id: str = Field(..., description="ID of the book to search in")
-    question: str = Field(..., min_length=3, description="The student's question")
+class QueryRequest(BaseModel):
+    book_id:  str
+    question: str = Field(..., min_length=3)
+    chat_id:  Optional[str] = None   # links query to a chat for saving to Postgres
 
-
-class SourceChunk(BaseModel):    
-    page_number: int = Field(..., description="Page in the original PDF")
-    chunk_index: int = Field(..., description="Which chunk on that page (0-based)")
-    text_preview: str = Field(..., description="First 200 chars of the chunk text")
-    relevance_score: float = Field(..., description="Similarity score 0–1 (higher = more relevant)")
-
+class SourceChunk(BaseModel):
+    page_number:     int
+    chunk_index:     int
+    text_preview:    str
+    relevance_score: float
 
 class QueryResponse(BaseModel):
-   
-    answer: str = Field(..., description="LLM-generated answer based on the textbook")
-    sources: List[SourceChunk] = Field(..., description="Textbook chunks used to generate the answer")
-    question: str = Field(..., description="Echo of the original question")
-
+    answer:   str
+    sources:  List[SourceChunk]
+    question: str
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+#  Chat schemas
+
+class ChatOut(BaseModel):
+    chat_id:      str
+    book_id:      str
+    book_name:    str
+    total_pages:  int
+    total_chunks: int
+    created_at:   datetime
+    last_message: str
+    last_at:      datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MessageOut(BaseModel):
+    """A single message returned from GET /chats/{chat_id}/messages."""
+    message_id: str
+    chat_id:    str
+    role:       str
+    text:       str
+    sources:    Optional[List[Any]] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CreateChatRequest(BaseModel):
+    book_id:      str
+    book_name:    str
+    total_pages:  int
+    total_chunks: int
+
+
+class SaveMessageRequest(BaseModel):
+    chat_id:  str
+    role:     str
+    text:     str
+    sources:  Optional[List[Any]] = None
