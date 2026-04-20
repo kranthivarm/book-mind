@@ -1,23 +1,21 @@
 // components/Sidebar.jsx
 import { useState } from "react";
-import "../styles/components/Sidebar.css";
+import  "../styles/components/Sidebar";
 
 export default function Sidebar({
-  chats, activeChatId, onNewChat, onSelectChat, onDeleteChat, isOpen, onToggle
+  chats, activeChatId, user, onNewChat, onSelectChat, onDeleteChat, onLogout, isOpen, onToggle
 }) {
   const [hoveredId, setHoveredId] = useState(null);
 
   const handleDelete = (e, chatId) => {
     e.stopPropagation();
-    if (window.confirm("Delete this chat?")) {
-      onDeleteChat(chatId);
-    }
+    if (window.confirm("Delete this chat?")) onDeleteChat(chatId);
   };
- 
+
   const formatDate = (rawTs) => {
     if (!rawTs) return "";
     const d = new Date(rawTs);
-    if (isNaN(d.getTime())) return ""; // guard against truly invalid values
+    if (isNaN(d.getTime())) return "";
     const now = new Date();
     const diffDays = Math.floor((now - d) / 86400000);
     if (diffDays === 0) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -35,13 +33,12 @@ export default function Sidebar({
           <span className="sidebar-logo">📖</span>
           <span className="sidebar-title">BookMind</span>
         </div>
-        <button className="sidebar-close" onClick={onToggle} title="Close sidebar">✕</button>
+        <button className="sidebar-close" onClick={onToggle}>✕</button>
       </div>
 
-      {/* New chat button */}
+      {/* New chat */}
       <button className="new-chat-btn" onClick={onNewChat}>
-        <span className="new-chat-icon">＋</span>
-        New Chat
+        <span className="new-chat-icon">＋</span>New Chat
       </button>
 
       {/* Chat list */}
@@ -51,7 +48,7 @@ export default function Sidebar({
             <p>No chats yet.</p>
             <p>Upload a textbook to start.</p>
           </div>
-        ) : ( 
+        ) : (
           chats.map(chat => (
             <div
               key={chat.chat_id}
@@ -70,11 +67,8 @@ export default function Sidebar({
               <div className="chat-item-meta">
                 <span className="chat-item-time">{formatDate(chat.last_at)}</span>
                 {hoveredId === chat.chat_id && (
-                  <button
-                    className="chat-delete-btn"
-                    onClick={(e) => handleDelete(e, chat.chat_id)}
-                    title="Delete chat"
-                  >🗑</button>
+                  <button className="chat-delete-btn"
+                    onClick={(e) => handleDelete(e, chat.chat_id)}>🗑</button>
                 )}
               </div>
             </div>
@@ -82,9 +76,16 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* Footer */}
+      {/* User footer with logout */}
       <div className="sidebar-footer">
-        <p className="sidebar-footer-text">{chats.length} chat{chats.length !== 1 ? "s" : ""}</p>
+        <div className="user-row">
+          <div className="user-avatar">{user?.username?.[0]?.toUpperCase() || "U"}</div>
+          <div className="user-info">
+            <p className="user-name">{user?.username}</p>
+            <p className="user-email">{truncate(user?.email, 22)}</p>
+          </div>
+          <button className="logout-btn" onClick={onLogout} title="Log out">⏻</button>
+        </div>
       </div>
     </aside>
   );
