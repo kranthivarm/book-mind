@@ -65,7 +65,6 @@ def normalise_rerank_score(raw_score: float) -> float:
 
 
 def _build_sources(top_chunks: List[Dict]) -> List[SourceChunk]:
-    """Shared by both answer_question and stream_answer_question."""
     sources = []
     for chunk in top_chunks:
         score   = normalise_rerank_score(chunk.get("rerank_score", 0))
@@ -81,10 +80,6 @@ def _build_sources(top_chunks: List[Dict]) -> List[SourceChunk]:
 
 
 def _get_top_chunks(book_id: str, question: str) -> List[Dict]:
-    """
-    Shared retrieval + reranking used by both functions.
-    Returns reranked top chunks, or empty list if nothing found.
-    """
     logger.info(f"Embedding question for book_id={book_id}")
     query_vector = embedding_service.embed_query(question)
 
@@ -161,7 +156,6 @@ async def stream_answer_question(book_id: str, question: str) -> AsyncGenerator[
         human_message  = HUMAN_PROMPT_TEMPLATE.format(context=context_string, question=question)
 
         #   Groq streaming call
-        # Only difference from answer_question: stream=True
         yield sse({"type": "status", "content": "Generating answer…"})
 
         logger.info(f"Calling Groq LLM streaming (model={settings.LLM_MODEL})")

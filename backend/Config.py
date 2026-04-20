@@ -9,6 +9,13 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = Field(..., description="PostgreSQL connection string")
 
+    SECRET_KEY:    str = Field(..., description="Strong random secret for JWT signing")
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES:  int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS:    int = 7
+
+    COOKIE_SECURE: bool = False
+
     LLM_MODEL: str = "llama-3.1-8b-instant"   # Fast & smart Groq model
     LLM_TEMPERATURE: float = 0.1              # Low = more factual, less creative
     LLM_MAX_TOKENS: int = 1024                # Max tokens in the generated answer

@@ -127,7 +127,6 @@ def _order_blocks_by_columns(
 
 
 def _clean_block_text(text: str) -> str:
-    """Cleans raw text from a single PDF block."""
     text = re.sub(r"-\n", "", text)          # fix hyphenated line-breaks
     text = re.sub(r"\n{3,}", "\n\n", text)   # collapse excess newlines
     text = re.sub(r" {2,}", " ", text)       # collapse spaces
