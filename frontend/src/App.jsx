@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import AuthPage   from "./pages/AuthPage";
 import Sidebar    from "./components/Sidebar";
 import UploadPage from "./pages/UploadPage";
-import ChatPage   from "./pages/ChatPage";
+import ChatPage   from "./pages/Chatpage";
 import { getMe, logout, getAllChats, createChat, deleteChat } from "./services/api";
 import "./styles/global.css";
 

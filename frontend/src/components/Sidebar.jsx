@@ -1,6 +1,6 @@
 // components/Sidebar.jsx
 import { useState } from "react";
-import  "../styles/components/Sidebar";
+import  "../styles/components/Sidebar.css"
 
 export default function Sidebar({
   chats, activeChatId, user, onNewChat, onSelectChat, onDeleteChat, onLogout, isOpen, onToggle
