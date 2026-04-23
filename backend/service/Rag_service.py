@@ -1,5 +1,5 @@
 from groq import AsyncGroq, Groq
-from typing import List, Dict, AsyncGenerator
+from typing import List, Dict, AsyncGenerator, Optional
 from Config import settings
 from service.Embedding_service import embedding_service
 from service.Vector_store import vector_store
@@ -11,22 +11,20 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# groq_client = Groq(api_key=settings.GROQ_API_KEY)
-
 sync_groq_client  = Groq(api_key=settings.GROQ_API_KEY)
 async_groq_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
 
 
+
 SYSTEM_PROMPT = """You are an expert educational tutor for school students.
-Your ONLY job is to answer questions based on the textbook excerpts provided.
+Answer questions ONLY from the textbook excerpts provided below.
 
 STRICT RULES:
-1. Answer ONLY using information from the provided textbook context below.
-2. If the answer is not found in the context, say: "I couldn't find this topic in the uploaded textbook. Please check another chapter or ask your teacher."
-3. Do NOT use any outside knowledge — even if you know the answer.
-4. Use clear, simple language suitable for school students.
-5. When possible, reference specific parts of the text in your explanation.
-6. Keep answers concise but complete."""
+1. Use ONLY the provided textbook context. Never use outside knowledge.
+2. If the answer is not in the context, say: "I couldn't find this topic in the uploaded textbook. Please check another chapter or ask your teacher."
+3. Use clear, simple language suitable for school students.
+4. You have access to the recent conversation history — use it to understand follow-up questions and references like "it", "that", "explain more", "why?".
+5. Keep answers concise but complete."""
 
 HUMAN_PROMPT_TEMPLATE = """Here are the relevant excerpts from the student's textbook:
 
@@ -59,11 +57,6 @@ def parse_raw_results(raw_results: Dict) -> List[Dict]:
     ]
 
 
-def distance_to_score(distance: float) -> float:
-    score = 1.0 - (distance / 2.0)
-    return round(max(0.0, min(1.0, score)), 3)
-
-
 def normalise_rerank_score(raw_score: float) -> float:
     return round(1 / (1 + math.exp(-raw_score)), 3)
 
@@ -83,11 +76,53 @@ def _build_sources(top_chunks: List[Dict]) -> List[SourceChunk]:
     return sources
 
 
-def _get_top_chunks(book_id: str, question: str) -> List[Dict]:
-    logger.info(f"Embedding question for book_id={book_id}")
-    query_vector = embedding_service.embed_query(question)
+#  Chat history helpers
 
-    logger.info(f"Retrieving top {settings.RERANK_CANDIDATES} candidates from ChromaDB")
+def build_history_messages(history: List[Dict]) -> List[Dict]:
+    
+    # Take only last N messages, skip empty AI placeholders # last 3 only
+    recent = [m for m in history if m.get("text", "").strip()]
+    recent = recent[-settings.HISTORY_MESSAGES_LIMIT:]
+
+    groq_messages = []
+    for msg in recent:
+        role = "assistant" if msg["role"] == "ai" else "user"
+        groq_messages.append({"role": role, "content": msg["text"]})
+
+    return groq_messages
+
+
+def build_retrieval_query(question: str, history: List[Dict]) -> str:
+    """
+    Combines current question + last user question for better embedding search.
+    """
+    # Find the last user question from history
+    last_user_q = ""
+    for msg in reversed(history):
+        if msg.get("role") == "user" and msg.get("text", "").strip():
+            last_user_q = msg["text"].strip()
+            break
+
+    if last_user_q and last_user_q.lower() != question.lower():
+        # Combine: last question gives semantic context, current gives intent
+        return f"{last_user_q} {question}"
+
+    return question
+
+
+def _get_top_chunks(book_id: str, question: str, history: List[Dict] = None) -> List[Dict]:
+    """
+    Retrieval + reranking.
+    Uses history-aware query for embedding if history is provided.
+    """
+    # Build a richer query using conversation context
+    retrieval_query = build_retrieval_query(question, history or [])
+
+    if retrieval_query != question:
+        logger.info(f"History-aware query: '{retrieval_query[:80]}'")
+
+    query_vector = embedding_service.embed_query(retrieval_query)
+
     raw_results = vector_store.search(
         book_id=book_id,
         query_embedding=query_vector,
@@ -98,91 +133,112 @@ def _get_top_chunks(book_id: str, question: str) -> List[Dict]:
     if not candidates:
         return []
 
-    logger.info("Reranking candidates with cross-encoder")
     top_chunks = embedding_service.rerank(
-        query=question,
+        query=question,      # rerank against original question, not expanded query
         chunks=candidates,
         top_n=settings.TOP_K_RESULTS,
     )
     return top_chunks
 
 
-# //non streaming
-async def answer_question(book_id: str, question: str) -> QueryResponse:
-    top_chunks = _get_top_chunks(book_id, question)
+#   LLM messages builder  
+
+def build_llm_messages(
+    context_string: str,
+    question: str,
+    history_messages: List[Dict],
+) -> List[Dict]:
+    
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    # Insert conversation history BEFORE the current question
+    messages.extend(history_messages)
+
+    # Current question with textbook context
+    human_message = HUMAN_PROMPT_TEMPLATE.format(
+        context=context_string,
+        question=question,
+    )
+    messages.append({"role": "user", "content": human_message})
+
+    return messages
+
+
+#   Non-streaming  
+
+async def answer_question(
+    book_id: str,
+    question: str,
+    history: Optional[List[Dict]] = None,
+) -> QueryResponse:
+    history = history or []
+    top_chunks = _get_top_chunks(book_id, question, history)
 
     if not top_chunks:
         return QueryResponse(
             answer="No relevant content found in the textbook for your question.",
-            sources=[],
-            question=question
+            sources=[], question=question
         )
 
-    context_string = build_context_string(top_chunks)
-    human_message  = HUMAN_PROMPT_TEMPLATE.format(context=context_string, question=question)
+    context_string   = build_context_string(top_chunks)
+    history_messages = build_history_messages(history)
+    messages         = build_llm_messages(context_string, question, history_messages)
 
-    logger.info(f"Calling Groq LLM (model={settings.LLM_MODEL})")
-    # completion = groq_client.chat.completions.create(
+    logger.info(f"Calling Groq | model={settings.LLM_MODEL} | history_turns={len(history_messages)//2}")
     completion = sync_groq_client.chat.completions.create(
         model=settings.LLM_MODEL,
         temperature=settings.LLM_TEMPERATURE,
         max_tokens=settings.LLM_MAX_TOKENS,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": human_message}
-        ]
+        messages=messages,
     )
 
     answer_text = completion.choices[0].message.content.strip()
-    logger.info("Groq LLM response received")
-
     return QueryResponse(answer=answer_text, sources=_build_sources(top_chunks), question=question)
 
 
-#  Streaming 
+#   Streaming  
 
-async def stream_answer_question(book_id: str, question: str) -> AsyncGenerator[str, None]:   
+async def stream_answer_question(
+    book_id: str,
+    question: str,
+    history: Optional[List[Dict]] = None,
+) -> AsyncGenerator[str, None]:
+    history = history or []
 
     def sse(payload: dict) -> str:
         return f"data: {json.dumps(payload)}\n\n"
 
     try:
-        #  Retrieval + reranking (same as answer_question)
         yield sse({"type": "status", "content": "Searching your textbook…"})
 
-        top_chunks = _get_top_chunks(book_id, question)
+        top_chunks = _get_top_chunks(book_id, question, history)
 
         if not top_chunks:
             yield sse({"type": "error", "content": "No relevant content found in the textbook for your question."})
             yield sse({"type": "done"})
             return
 
-        context_string = build_context_string(top_chunks)
-        human_message  = HUMAN_PROMPT_TEMPLATE.format(context=context_string, question=question)
+        context_string   = build_context_string(top_chunks)
+        history_messages = build_history_messages(history)
+        messages         = build_llm_messages(context_string, question, history_messages)
 
-        #   Groq streaming call
         yield sse({"type": "status", "content": "Generating answer…"})
 
-        logger.info(f"Calling Groq LLM streaming (model={settings.LLM_MODEL})")
-        # stream = groq_client.chat.completions.create(
-        stream = await async_groq_client.chat.completions.create(        
+        logger.info(f"Groq stream | model={settings.LLM_MODEL} | history_turns={len(history_messages)//2}")
+
+        stream = await async_groq_client.chat.completions.create(
             model=settings.LLM_MODEL,
             temperature=settings.LLM_TEMPERATURE,
             max_tokens=settings.LLM_MAX_TOKENS,
-            stream=True,                          
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": human_message}
-            ]
+            stream=True,
+            messages=messages,
         )
 
-        #   Yield each token as it arrives from Groq 
         async for chunk in stream:
             token = chunk.choices[0].delta.content
             if token:
                 yield sse({"type": "token", "content": token})
 
-        #   Send sources after answer is complete  
         sources_data = [
             {
                 "page_number":     s.page_number,
