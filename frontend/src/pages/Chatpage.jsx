@@ -1,4 +1,3 @@
-// pages/ChatPage.jsx
 import { useState, useRef, useEffect, useCallback } from "react";
 import { getChatMessages, streamQuestion } from "../services/api";
 import SourcesPanel from "../components/SourcesPanel";

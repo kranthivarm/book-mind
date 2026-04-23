@@ -1,5 +1,4 @@
- 
-const BASE_URL = "http://localhost:8000/api";
+ const BASE_URL = "http://localhost:8000/api";
  
 async function apiFetch(url, options = {}, retry = true) {
   const res = await fetch(url, {

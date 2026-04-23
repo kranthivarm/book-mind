@@ -1,5 +1,5 @@
 import asyncpg
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Cookie
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
@@ -65,16 +65,17 @@ async def register(body: RegisterRequest):
 
 @router.post("/login")
 async def login(body: LoginRequest):
-    """
-    Verifies credentials and sets auth cookies.
-    Uses timing-safe password check to prevent timing attacks.
-    """
     user = await user_repo.get_user_by_email(body.email)
 
     # Always run verify_password even if user not found
-    # (prevents timing-based email enumeration)
-    dummy_hash = "$2b$12$KIX/rLfYyMfh0OqBRBqvKuAlxSLSu5V0YVXIh9X4QCH1F5/hBj5qC"
-    password_ok = verify_password(body.password, user["password_hash"] if user else dummy_hash)
+    # (prevents timing-based email enumeration attacks)
+    # Wrap in try/except — if dummy hash is malformed it should not crash
+    password_ok = False
+    try:
+        check_hash = user["password_hash"] if user else "$2b$12$KIX/rLfYyMfh0OqBRBqvKuqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+        password_ok = verify_password(body.password, check_hash)
+    except Exception:
+        password_ok = False
 
     if not user or not password_ok:
         raise HTTPException(
@@ -102,13 +103,13 @@ async def logout():
 
 
 @router.post("/refresh")
-async def refresh_token(refresh_token: Optional[str] = None):
+async def refresh_token(
+    refresh_token: Optional[str] = Cookie(default=None)  # ← read from cookie, not query param
+):
     """
     Issues a new access token using the refresh token cookie.
     Called automatically by frontend when access token expires (401 response).
     """
-    from fastapi import Cookie
-    # Note: this param is injected by FastAPI from cookie
     if not refresh_token:
         raise HTTPException(status_code=401, detail="No refresh token. Please log in.")
 

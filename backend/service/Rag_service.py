@@ -1,4 +1,4 @@
-from groq import Groq
+from groq import AsyncGroq, Groq
 from typing import List, Dict, AsyncGenerator
 from Config import settings
 from service.Embedding_service import embedding_service
@@ -11,7 +11,11 @@ import re
 
 logger = logging.getLogger(__name__)
 
-groq_client = Groq(api_key=settings.GROQ_API_KEY)
+# groq_client = Groq(api_key=settings.GROQ_API_KEY)
+
+sync_groq_client  = Groq(api_key=settings.GROQ_API_KEY)
+async_groq_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+
 
 SYSTEM_PROMPT = """You are an expert educational tutor for school students.
 Your ONLY job is to answer questions based on the textbook excerpts provided.
@@ -118,7 +122,8 @@ async def answer_question(book_id: str, question: str) -> QueryResponse:
     human_message  = HUMAN_PROMPT_TEMPLATE.format(context=context_string, question=question)
 
     logger.info(f"Calling Groq LLM (model={settings.LLM_MODEL})")
-    completion = groq_client.chat.completions.create(
+    # completion = groq_client.chat.completions.create(
+    completion = sync_groq_client.chat.completions.create(
         model=settings.LLM_MODEL,
         temperature=settings.LLM_TEMPERATURE,
         max_tokens=settings.LLM_MAX_TOKENS,
@@ -159,11 +164,12 @@ async def stream_answer_question(book_id: str, question: str) -> AsyncGenerator[
         yield sse({"type": "status", "content": "Generating answer…"})
 
         logger.info(f"Calling Groq LLM streaming (model={settings.LLM_MODEL})")
-        stream = groq_client.chat.completions.create(
+        # stream = groq_client.chat.completions.create(
+        stream = await async_groq_client.chat.completions.create(        
             model=settings.LLM_MODEL,
             temperature=settings.LLM_TEMPERATURE,
             max_tokens=settings.LLM_MAX_TOKENS,
-            stream=True,                          # ← only change from non-streaming
+            stream=True,                          
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user",   "content": human_message}
@@ -171,7 +177,7 @@ async def stream_answer_question(book_id: str, question: str) -> AsyncGenerator[
         )
 
         #   Yield each token as it arrives from Groq 
-        for chunk in stream:
+        async for chunk in stream:
             token = chunk.choices[0].delta.content
             if token:
                 yield sse({"type": "token", "content": token})
