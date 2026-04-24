@@ -179,3 +179,141 @@
   .header-pills { display: none; }
   .chat-header { padding: 12px 14px 12px 52px; }
 }
+
+
+/* Add these to your existing ChatPage.css */
+
+ /* Input wrap listening state  */
+.input-wrap.listening {
+  border-color: var(--pink-400);
+  box-shadow: 0 0 0 3px rgba(240, 45, 110, 0.15);
+}
+
+ /* Mic button */
+.mic-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-md);
+  border: none;
+  background: var(--pink-50);
+  color: var(--pink-400);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+.mic-btn:hover:not(:disabled) {
+  background: var(--pink-100);
+  color: var(--accent);
+}
+.mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Active / listening state — pulsing pink */
+.mic-btn.active {
+  background: var(--accent);
+  color: white;
+  animation: mic-pulse 1.5s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240, 45, 110, 0.4); }
+  50%       { box-shadow: 0 0 0 8px rgba(240, 45, 110, 0); }
+}
+
+ /* Animated waveform inside mic button while listening  */
+.mic-wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+}
+.mic-wave span {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: white;
+  animation: wave-bar 0.8s ease-in-out infinite;
+}
+.mic-wave span:nth-child(1) { height: 5px;  animation-delay: 0s;    }
+.mic-wave span:nth-child(2) { height: 10px; animation-delay: 0.1s;  }
+.mic-wave span:nth-child(3) { height: 14px; animation-delay: 0.2s;  }
+.mic-wave span:nth-child(4) { height: 10px; animation-delay: 0.3s;  }
+.mic-wave span:nth-child(5) { height: 5px;  animation-delay: 0.4s;  }
+
+@keyframes wave-bar {
+  0%, 100% { transform: scaleY(0.5); opacity: 0.6; }
+  50%       { transform: scaleY(1);   opacity: 1;   }
+}
+
+/* Listening indicator above input  */
+.listening-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px 12px;
+  background: var(--pink-50);
+  border: 1px solid var(--pink-200);
+  border-radius: var(--r-full);
+  width: fit-content;
+}
+.listening-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: listening-bounce 1s ease-in-out infinite;
+}
+.listening-dot:nth-child(2) { animation-delay: 0.15s; }
+.listening-dot:nth-child(3) { animation-delay: 0.3s;  }
+
+@keyframes listening-bounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
+  40%           { transform: scale(1.1); opacity: 1;   }
+}
+
+.listening-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* ── Interim text overlay ──────────────────────────────────────────────────── */
+/* This sits on top of the textarea to show live speech preview */
+.input-wrap {
+  position: relative;  /* ensure this is set */
+}
+
+.interim-overlay {
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  right: 120px;        /* clear the buttons on right */
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: transparent;  /* hide the confirmed text copy (textarea shows it) */
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.interim-text {
+  color: var(--pink-400);  /* live interim words shown in pink */
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* Speech error */
+.speech-error {
+  font-size: 12.5px;
+  color: #c0385a;
+  background: #fff2f5;
+  border: 1px solid #ffc8d5;
+  border-radius: var(--r-md);
+  padding: 7px 12px;
+  margin-bottom: 8px;
+}
