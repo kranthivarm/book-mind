@@ -2,6 +2,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
+from Config import settings
 
 from db.database import get_pool
 
@@ -96,6 +97,26 @@ async def update_message(message_id: str, text: str, sources: Optional[List[Dict
             "UPDATE messages SET text = $1, sources = $2 WHERE message_id = $3",
             text, json.dumps(sources) if sources else None, message_id,
         )
+
+
+async def get_recent_messages(chat_id: str, limit: int | None = None) -> List[Dict]:
+    """
+    Returns last N messages (default from config), ordered ASC for LLM.
+    """
+    limit = limit or settings.HISTORY_MESSAGES_LIMIT
+
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT * FROM messages
+            WHERE chat_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            chat_id, limit
+        )
+
+    return list(reversed([_fmt(dict(r)) for r in rows]))
 
 
 def _fmt(row: Dict) -> Dict:

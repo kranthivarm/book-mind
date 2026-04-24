@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = Field(..., description="Your Groq API key from console.groq.com")
 
 
+    anonymized_telemetry: bool = Field(default=False)
+
     DATABASE_URL: str = Field(..., description="PostgreSQL connection string")
 
     SECRET_KEY:    str = Field(..., description="Strong random secret for JWT signing")
@@ -40,6 +42,8 @@ class Settings(BaseSettings):
     
     # MAX_FILE_SIZE_MB: int = 50
     MAX_FILE_SIZE_MB: int = 200
+
+    HISTORY_MESSAGES_LIMIT: int = 6
 
 
     class Config:

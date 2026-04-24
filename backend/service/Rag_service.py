@@ -34,6 +34,8 @@ HUMAN_PROMPT_TEMPLATE = """Here are the relevant excerpts from the student's tex
 
 Student's Question: {question}
 
+If the question contains pronouns like "it", "that", "they", etc resolve them using the conversation history before answering.
+
 Please answer the question based ONLY on the textbook excerpts above."""
 
 
@@ -89,6 +91,8 @@ def build_history_messages(history: List[Dict]) -> List[Dict]:
         role = "assistant" if msg["role"] == "ai" else "user"
         groq_messages.append({"role": role, "content": msg["text"]})
 
+    # print(groq_messages)
+    
     return groq_messages
 
 
@@ -108,6 +112,16 @@ def build_retrieval_query(question: str, history: List[Dict]) -> str:
         return f"{last_user_q} {question}"
 
     return question
+
+# def build_retrieval_query(question: str, history: List[Dict]) -> str:
+#     last_user_msgs = [
+#         m["text"] for m in reversed(history)
+#         if m.get("role") == "user" and m.get("text", "").strip()
+#     ][:2]
+
+#     last_user_msgs.reverse()
+
+#     return " ".join(last_user_msgs + [question])
 
 
 def _get_top_chunks(book_id: str, question: str, history: List[Dict] = None) -> List[Dict]:

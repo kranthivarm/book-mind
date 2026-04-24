@@ -50,13 +50,19 @@ async def _stream_and_save(book_id: str, question: str, chat_id: str | None):
     ai_message_id = None
 
     try:
+        history = []
         if chat_id:
+            #recent mssgs for pronouns
+            history = await chat_repo.get_recent_messages(chat_id, limit=6)
+
             await chat_repo.save_message(chat_id=chat_id, role="user", text=question)
             await chat_repo.update_chat_preview(chat_id, question)
+
             ai_msg = await chat_repo.save_message(chat_id=chat_id, role="ai", text="")
             ai_message_id = ai_msg["message_id"]
 
-        async for event_str in stream_answer_question(book_id, question):
+        #pass history to RAG    
+        async for event_str in stream_answer_question(book_id, question, history=history):
             try:
                 payload = json.loads(event_str.removeprefix("data: ").strip())
             except Exception:
