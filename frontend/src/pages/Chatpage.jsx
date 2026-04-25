@@ -1,6 +1,9 @@
+// pages/ChatPage.jsx
+// Contains: streaming chat + speech recognition + quiz generation
 import { useState, useRef, useEffect, useCallback } from "react";
-import { getChatMessages, streamQuestion } from "../services/api";
+import { getChatMessages, streamQuestion, generateQuiz } from "../services/api";
 import SourcesPanel from "../components/SourcesPanel";
+import QuizPanel   from "../components/QuizPanel";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import "../styles/pages/Chatpage.css";
 
@@ -10,35 +13,31 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
   const [isLoading,      setIsLoading]      = useState(false);
   const [statusText,     setStatusText]     = useState("");
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [interimText,    setInterimText]    = useState("");
 
-  // interimText: the live "preview" of what's being spoken right now
-  // shown in the textarea with lower opacity until speech is confirmed
-  const [interimText, setInterimText] = useState("");
+  // ── Quiz state ─────────────────────────────────────────────────────────────
+  const [showQuizModal,  setShowQuizModal]  = useState(false);
+  const [quizTopic,      setQuizTopic]      = useState("");
+  const [quizCount,      setQuizCount]      = useState(5);
+  const [quizLoading,    setQuizLoading]    = useState(false);
+  const [quizData,       setQuizData]       = useState(null);  // { questions: [...] }
+  const [quizError,      setQuizError]      = useState("");
 
   const messagesEndRef = useRef(null);
   const inputRef       = useRef(null);
 
-  //   Speech recognition
+  // ── Speech recognition ─────────────────────────────────────────────────────
   const { isListening, isSupported, error: speechError, toggle: toggleMic } =
     useSpeechRecognition({
-
-      // Called when a word/phrase is fully recognised (user paused)
-      // We APPEND to existing question so multiple mic presses accumulate
       onTranscript: (text) => {
-        setQuestion(prev => {
-          const separator = prev.trim() ? " " : "";
-          return prev + separator + text;
-        });
+        setQuestion(prev => prev + (prev.trim() ? " " : "") + text);
         setInterimText("");
-        // Focus textarea so user can edit immediately after speaking
         inputRef.current?.focus();
       },
-
-      // Called live as user speaks — shows a preview, not yet committed
       onInterim: (text) => setInterimText(text),
     });
 
-  //   Load history 
+  // ── Load history ────────────────────────────────────────────────────────────
   useEffect(() => {
     setLoadingHistory(true);
     getChatMessages(chatId)
@@ -63,7 +62,7 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  //   Send  
+  // ── Send message ────────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     const q = question.trim();
     if (!q || isLoading) return;
@@ -83,7 +82,7 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
 
     await streamQuestion(bookId, q, chatId, {
       onStatus: setStatusText,
-      onToken: (token) => {
+      onToken:  (token) => {
         setMessages(prev =>
           prev.map(m => m.id === aiMsgLocalId ? { ...m, text: m.text + token } : m)
         );
@@ -120,17 +119,38 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const shortName = bookName?.length > 28 ? bookName.slice(0, 25) + "…" : bookName;
+  // ── Quiz generation ─────────────────────────────────────────────────────────
+  const handleGenerateQuiz = async () => {
+    const topic = quizTopic.trim();
+    if (!topic) return;
 
-  // The textarea shows: confirmed text + live interim preview
-  const displayValue = interimText
-    ? question + (question.trim() ? " " : "") + interimText
-    : question;
+    setQuizLoading(true);
+    setQuizError("");
+    setQuizData(null);
+
+    try {
+      const data = await generateQuiz(bookId, topic, quizCount);
+      setQuizData(data);
+    } catch (err) {
+      setQuizError(err.message);
+    } finally {
+      setQuizLoading(false);
+    }
+  };
+
+  const closeQuiz = () => {
+    setShowQuizModal(false);
+    setQuizData(null);
+    setQuizTopic("");
+    setQuizError("");
+  };
+
+  const shortName = bookName?.length > 28 ? bookName.slice(0, 25) + "…" : bookName;
 
   return (
     <div className="chat-page">
 
-      {/* Header */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="chat-header">
         <div className="chat-header-book">
           <span className="chat-header-icon">📄</span>
@@ -139,15 +159,26 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
             <p className="chat-header-name" title={bookName}>{shortName}</p>
           </div>
         </div>
-        {bookStats && (
-          <div className="header-pills">
-            <span className="header-pill">📖 {bookStats.totalPages} pages</span>
-            <span className="header-pill">🔍 {bookStats.totalChunks} chunks</span>
-          </div>
-        )}
+
+        <div className="header-right">
+          {bookStats && (
+            <div className="header-pills">
+              <span className="header-pill">📖 {bookStats.totalPages} pages</span>
+              <span className="header-pill">🔍 {bookStats.totalChunks} chunks</span>
+            </div>
+          )}
+          {/* Quiz button in header */}
+          <button
+            className="quiz-trigger-btn"
+            onClick={() => setShowQuizModal(true)}
+            title="Generate a quiz from this textbook"
+          >
+            🧪 Quiz me
+          </button>
+        </div>
       </header>
 
-      {/* Messages */}
+      {/* ── Messages ───────────────────────────────────────────────────────── */}
       <div className="chat-messages">
         {loadingHistory ? (
           <div className="chat-loading">
@@ -165,11 +196,17 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
                   onClick={() => { setQuestion(s); inputRef.current?.focus(); }}>{s}</button>
               ))}
             </div>
+            {/* Quiz suggestion in empty state */}
+            <button className="quiz-suggestion" onClick={() => setShowQuizModal(true)}>
+              🧪 Or test yourself with a quiz
+            </button>
           </div>
         ) : (
           messages.map((msg, idx) => (
             <div key={msg.id || idx} className={`message-row ${msg.role}`}>
-              <div className={`msg-avatar ${msg.role}`}>{msg.role === "user" ? "👤" : "🤖"}</div>
+              <div className={`msg-avatar ${msg.role}`}>
+                {msg.role === "user" ? "👤" : "🤖"}
+              </div>
               <div className="msg-content">
                 <div className={`msg-bubble ${msg.role} ${msg.isError ? "error" : ""}`}>
                   {msg.streaming && !msg.text ? (
@@ -191,16 +228,11 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input bar */}
+      {/* ── Input bar ──────────────────────────────────────────────────────── */}
       <div className="chat-input-bar">
         {statusText && <p className="stream-status">{statusText}</p>}
+        {speechError && <p className="speech-error">⚠ {speechError}</p>}
 
-        {/* Speech error */}
-        {speechError && (
-          <p className="speech-error">⚠ {speechError}</p>
-        )}
-
-        {/* Listening indicator above input */}
         {isListening && (
           <div className="listening-indicator">
             <span className="listening-dot"/><span className="listening-dot"/><span className="listening-dot"/>
@@ -212,10 +244,7 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
           <textarea
             ref={inputRef}
             className="chat-input"
-            placeholder={isListening ? "Listening… speak your question" : "Ask a question or click 🎤 to speak…"}
-            // Show confirmed text + live interim preview while speaking
-            // But textarea value stays as `question` (only confirmed text)
-            // We show displayValue as a visual trick using a layered approach
+            placeholder={isListening ? "Listening…" : "Ask a question or click 🎤 to speak…"}
             value={question}
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -223,14 +252,13 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
             disabled={isLoading}
           />
 
-          {/* Live interim text shown as ghost overlay */}
           {interimText && (
             <span className="interim-overlay">
-              {question}{question.trim() ? " " : ""}<span className="interim-text">{interimText}</span>
+              {question}{question.trim() ? " " : ""}
+              <span className="interim-text">{interimText}</span>
             </span>
           )}
 
-          {/* Mic button — only shown if browser supports it */}
           {isSupported && (
             <button
               className={`mic-btn ${isListening ? "active" : ""}`}
@@ -240,12 +268,10 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
               type="button"
             >
               {isListening ? (
-                // Animated waveform while listening
                 <span className="mic-wave">
                   <span/><span/><span/><span/><span/>
                 </span>
               ) : (
-                // Mic icon when idle
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <rect x="9" y="2" width="6" height="11" rx="3"/>
@@ -257,13 +283,8 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
             </button>
           )}
 
-          {/* Send button */}
-          <button
-            className="send-btn"
-            onClick={handleSend}
-            disabled={!question.trim() || isLoading}
-            title="Send (Enter)"
-          >
+          <button className="send-btn" onClick={handleSend}
+            disabled={!question.trim() || isLoading} title="Send (Enter)">
             {isLoading ? <span className="send-spinner"/> :
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth="2.5">
@@ -275,10 +296,83 @@ export default function ChatPage({ chatId, bookId, bookName, bookStats, onChatsC
         </div>
 
         <p className="input-hint">
-          Enter to send · Shift+Enter for new line
-          {isSupported && " · 🎤 to speak"}
+          Enter to send · Shift+Enter for new line{isSupported && " · 🎤 to speak"}
         </p>
       </div>
+
+      {/* ── Quiz Modal ─────────────────────────────────────────────────────── */}
+      {showQuizModal && (
+        <div className="quiz-overlay" onClick={(e) => e.target === e.currentTarget && closeQuiz()}>
+          <div className="quiz-modal">
+
+            {/* Modal header */}
+            <div className="quiz-modal-header">
+              <h2 className="quiz-modal-title">🧪 Quiz Generator</h2>
+              <button className="quiz-modal-close" onClick={closeQuiz}>✕</button>
+            </div>
+
+            {/* Topic input — shown until quiz is generated */}
+            {!quizData && (
+              <div className="quiz-setup">
+                <p className="quiz-setup-sub">
+                  Generate multiple choice questions from <strong>{shortName}</strong>
+                </p>
+
+                <div className="quiz-field">
+                  <label className="quiz-label">Topic or chapter</label>
+                  <input
+                    className="quiz-input"
+                    type="text"
+                    placeholder="e.g. photosynthesis, digestive system, chapter 3…"
+                    value={quizTopic}
+                    onChange={e => setQuizTopic(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleGenerateQuiz()}
+                    autoFocus
+                  />
+                </div>
+
+                <div className="quiz-field">
+                  <label className="quiz-label">Number of questions</label>
+                  <div className="quiz-count-row">
+                    {[3, 5, 7, 10].map(n => (
+                      <button
+                        key={n}
+                        className={`quiz-count-btn ${quizCount === n ? "active" : ""}`}
+                        onClick={() => setQuizCount(n)}
+                      >{n}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {quizError && <p className="quiz-error">⚠ {quizError}</p>}
+
+                <button
+                  className="btn-primary quiz-generate-btn"
+                  onClick={handleGenerateQuiz}
+                  disabled={!quizTopic.trim() || quizLoading}
+                >
+                  {quizLoading ? (
+                    <><span className="send-spinner"/> Generating…</>
+                  ) : (
+                    "Generate Quiz"
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* Quiz questions */}
+            {quizData && (
+              <div className="quiz-content">
+                <QuizPanel
+                  questions={quizData.questions}
+                  onRetry={() => { setQuizData(null); setQuizError(""); }}
+                  onClose={closeQuiz}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

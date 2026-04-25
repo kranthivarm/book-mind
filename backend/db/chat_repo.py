@@ -105,18 +105,35 @@ async def get_recent_messages(chat_id: str, limit: int | None = None) -> List[Di
     """
     limit = limit or settings.HISTORY_MESSAGES_LIMIT
 
+    # async with get_pool().acquire() as conn:
+    #     rows = await conn.fetch(
+    #         """
+    #         SELECT * FROM messages
+    #         WHERE chat_id = $1
+    #         ORDER BY created_at DESC
+    #         LIMIT $2
+    #         """,
+    #         chat_id, limit
+    #     )
+
+    # return list(reversed([_fmt(dict(r)) for r in rows]))
     async with get_pool().acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT * FROM messages
-            WHERE chat_id = $1
-            ORDER BY created_at DESC
-            LIMIT $2
+            SELECT * FROM (
+                SELECT * FROM messages
+                WHERE chat_id = $1
+                AND text != ''
+                ORDER BY created_at DESC
+                LIMIT $2
+            ) sub
+            ORDER BY created_at ASC
             """,
-            chat_id, limit
+            chat_id,
+            limit,
         )
+    return [_fmt(dict(r)) for r in rows]
 
-    return list(reversed([_fmt(dict(r)) for r in rows]))
 
 
 def _fmt(row: Dict) -> Dict:

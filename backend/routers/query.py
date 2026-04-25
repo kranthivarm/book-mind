@@ -12,23 +12,33 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+#  Non-streaming 
 @router.post("/query", response_model=QueryResponse)
 async def query_book(request: QueryRequest, current_user: dict = Depends(get_current_user)):
     if not vector_store.book_exists(request.book_id):
         raise HTTPException(status_code=404, detail="Book not found. Upload it first.")
     try:
-        return await answer_question(book_id=request.book_id, question=request.question)
+        # Fetch history for non-streaming too
+        history = []
+        if request.chat_id:
+            history = await chat_repo.get_recent_messages(request.chat_id, limit=6)
+
+        return await answer_question(
+            book_id=request.book_id,
+            question=request.question,
+            history=history,          # ← was missing before
+        )
     except Exception as e:
         logger.error(f"Query error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate answer.")
 
 
+#  Streaming 
 @router.post("/query/stream")
 async def query_book_stream(request: QueryRequest, current_user: dict = Depends(get_current_user)):
     if not vector_store.book_exists(request.book_id):
         raise HTTPException(status_code=404, detail="Book not found. Upload it first.")
 
-    # Verify chat belongs to this user
     if request.chat_id:
         chat = await chat_repo.get_chat(request.chat_id, user_id=current_user["user_id"])
         if not chat:
@@ -45,14 +55,14 @@ async def _stream_and_save(book_id: str, question: str, chat_id: str | None):
     def sse(payload: dict) -> str:
         return f"data: {json.dumps(payload)}\n\n"
 
-    full_answer = ""
+    full_answer   = ""
     final_sources = None
     ai_message_id = None
 
     try:
         history = []
         if chat_id:
-            #recent mssgs for pronouns
+            # Fetch BEFORE saving current message so history doesn't include it
             history = await chat_repo.get_recent_messages(chat_id, limit=6)
 
             await chat_repo.save_message(chat_id=chat_id, role="user", text=question)
@@ -61,7 +71,6 @@ async def _stream_and_save(book_id: str, question: str, chat_id: str | None):
             ai_msg = await chat_repo.save_message(chat_id=chat_id, role="ai", text="")
             ai_message_id = ai_msg["message_id"]
 
-        #pass history to RAG    
         async for event_str in stream_answer_question(book_id, question, history=history):
             try:
                 payload = json.loads(event_str.removeprefix("data: ").strip())

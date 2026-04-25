@@ -317,3 +317,116 @@
   padding: 7px 12px;
   margin-bottom: 8px;
 }
+
+
+
+
+/* ── Header right group ────────────────────────────────────────────────────── */
+.header-right {
+  display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+}
+
+/* ── Quiz trigger button in header ─────────────────────────────────────────── */
+.quiz-trigger-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 16px;
+  background: var(--pink-50); border: 1.5px solid var(--pink-200);
+  border-radius: var(--r-full);
+  font-family: var(--font-body); font-size: 13px; font-weight: 600;
+  color: var(--accent); cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.quiz-trigger-btn:hover {
+  background: var(--pink-100); border-color: var(--pink-400);
+}
+
+/* ── Quiz suggestion in empty state ─────────────────────────────────────────── */
+.quiz-suggestion {
+  margin-top: 8px; padding: 9px 20px;
+  background: transparent; border: 1.5px dashed var(--pink-300);
+  border-radius: var(--r-full);
+  font-family: var(--font-body); font-size: 13.5px; font-weight: 500;
+  color: var(--pink-500); cursor: pointer;
+  transition: all var(--transition);
+}
+.quiz-suggestion:hover { background: var(--pink-50); border-style: solid; }
+
+/* ── Quiz overlay (full-screen modal backdrop) ──────────────────────────────── */
+.quiz-overlay {
+  position: fixed; inset: 0;
+  background: rgba(26, 15, 24, 0.45);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; padding: 20px;
+  animation: fadeIn .2s ease;
+}
+
+/* ── Quiz modal card ─────────────────────────────────────────────────────────── */
+.quiz-modal {
+  background: var(--white); border-radius: 20px;
+  width: 100%; max-width: 620px;
+  max-height: 85vh; overflow-y: auto;
+  box-shadow: var(--shadow-xl);
+  animation: fadeUp .25s ease;
+  display: flex; flex-direction: column;
+}
+
+.quiz-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--gray-100);
+  flex-shrink: 0;
+}
+.quiz-modal-title { font-family: var(--font-display); font-size: 22px; color: var(--gray-900); }
+.quiz-modal-close {
+  background: none; border: none; font-size: 18px;
+  color: var(--gray-400); cursor: pointer; padding: 4px;
+  border-radius: var(--r-sm); transition: color var(--transition);
+}
+.quiz-modal-close:hover { color: var(--accent); }
+
+/* ── Quiz setup form ─────────────────────────────────────────────────────────── */
+.quiz-setup { padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 18px; }
+.quiz-setup-sub { font-size: 14px; color: var(--text-muted); }
+
+.quiz-field { display: flex; flex-direction: column; gap: 7px; }
+.quiz-label { font-size: 13px; font-weight: 600; color: var(--gray-700); }
+.quiz-input {
+  padding: 11px 14px;
+  border: 1.5px solid var(--pink-200); border-radius: var(--r-md);
+  font-family: var(--font-body); font-size: 14.5px; color: var(--gray-900);
+  outline: none; transition: all var(--transition);
+}
+.quiz-input:focus { border-color: var(--pink-400); box-shadow: 0 0 0 3px var(--pink-50); }
+
+.quiz-count-row { display: flex; gap: 8px; }
+.quiz-count-btn {
+  flex: 1; padding: 9px;
+  background: var(--gray-50); border: 1.5px solid var(--gray-200);
+  border-radius: var(--r-md);
+  font-family: var(--font-body); font-size: 14px; font-weight: 600;
+  color: var(--gray-500); cursor: pointer;
+  transition: all var(--transition);
+}
+.quiz-count-btn.active {
+  background: var(--pink-50); border-color: var(--pink-400); color: var(--accent);
+}
+.quiz-count-btn:hover:not(.active) { border-color: var(--pink-200); color: var(--gray-700); }
+
+.quiz-error {
+  padding: 10px 14px; background: #fff2f5; border: 1px solid #ffc8d5;
+  border-radius: var(--r-md); color: #c0385a; font-size: 13.5px;
+}
+
+.quiz-generate-btn { width: 100%; justify-content: center; padding: 13px; }
+
+/* ── Quiz content area ───────────────────────────────────────────────────────── */
+.quiz-content { padding: 20px 24px 24px; }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .quiz-trigger-btn { padding: 7px 10px; font-size: 12px; }
+  .header-pills { display: none; }
+  .quiz-modal { max-height: 92vh; }
+}

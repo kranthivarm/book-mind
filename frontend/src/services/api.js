@@ -174,3 +174,19 @@ export async function streamQuestion(bookId, question, chatId, callbacks) {
     onDone?.();
   }
 }
+
+
+
+export async function generateQuiz(bookId, topic, numQuestions = 5) {
+  const res = await apiFetch(`${BASE_URL}/quiz`, {
+    method: "POST",
+    body: JSON.stringify({
+      book_id:       bookId,
+      topic,
+      num_questions: numQuestions,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Failed to generate quiz");
+  return data;   // { questions: [...] }
+}
