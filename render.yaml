@@ -54,7 +54,6 @@ services:
   - type: web
     name: bookmind-frontend
     runtime: static
-    region: oregon
     plan: free              # Static sites are always free on Render
     rootDir: frontend
     buildCommand: npm install && npm run build
