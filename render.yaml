@@ -1,0 +1,74 @@
+
+
+services:
+
+  #  Backend: FastAPI 
+  - type: web
+    name: bookmind-backend
+    runtime: python
+    region: oregon          # change to: frankfurt, singapore, ohio — pick closest
+    plan: starter           # starter = $7/month, 2GB RAM (needed for ML models)
+                            # free plan only has 512MB — not enough for sentence-transformers
+    rootDir: backend        # Render runs all commands from this folder
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+                            # $PORT is set automatically by Render — do NOT hardcode 8000
+
+    # Persistent disk — ChromaDB stores vector data here
+    # Without this, ChromaDB data is lost every time Render restarts your service
+    disk:
+      name: chroma-storage
+      mountPath: /opt/render/project/src/chroma_db
+      sizeGB: 1
+
+    # Environment variables
+    # Add SECRET values in Render Dashboard → Environment (not here)
+    # Only non-secret config goes here
+    envVars:
+      - key: CHROMA_PERSIST_DIR
+        value: /opt/render/project/src/chroma_db
+      - key: COOKIE_SECURE
+        value: "False"
+      - key: HISTORY_MESSAGES_LIMIT
+        value: "6"
+      - key: RERANK_CANDIDATES
+        value: "15"
+      - key: TOP_K_RESULTS
+        value: "5"
+      - key: LLM_MODEL
+        value: llama-3.1-8b-instant
+      - key: LLM_TEMPERATURE
+        value: "0.1"
+      - key: LLM_MAX_TOKENS
+        value: "1024"
+      - key: CHUNK_SIZE
+        value: "1000"
+      - key: MAX_FILE_SIZE_MB
+        value: "50"
+      # These MUST be added in Render Dashboard (too secret for this file):
+      # GROQ_API_KEY
+      # DATABASE_URL
+      # SECRET_KEY
+
+  #  Frontend: React (Vite)
+  - type: web
+    name: bookmind-frontend
+    runtime: static
+    region: oregon
+    plan: free              # Static sites are always free on Render
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist  # Vite outputs to dist/
+
+    # This is CRITICAL for React SPA (Single Page Application)
+    # Without it, refreshing any page other than / gives a 404
+    # because Render looks for a real file at that path
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+    envVars:
+      - key: VITE_API_URL
+        value: https://bookmind-backend.onrender.com/api
+        # After deploying backend, update this to your actual backend URL
