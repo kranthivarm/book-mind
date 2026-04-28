@@ -1,26 +1,38 @@
+// App.jsx
 import { useState, useEffect } from "react";
 import AuthPage   from "./pages/AuthPage";
 import Sidebar    from "./components/Sidebar";
 import UploadPage from "./pages/UploadPage";
 import ChatPage   from "./pages/Chatpage";
-import { getMe, logout, getAllChats, createChat, deleteChat } from "./services/api";
+import {
+  getMe, logout, getAllChats, createChat, deleteChat,
+  loadTokensFromSession
+} from "./services/api";
 import "./styles/global.css";
 
 export default function App() {
-  const [user,         setUser]         = useState(null);    // logged-in user or null
-  const [authChecked,  setAuthChecked]  = useState(false);   // initial /me check done?
+  const [user,         setUser]         = useState(null);
+  const [authChecked,  setAuthChecked]  = useState(false);
   const [chats,        setChats]        = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   const [sidebarOpen,  setSidebarOpen]  = useState(true);
 
   useEffect(() => {
-    getMe()
-      .then(user => {
-        setUser(user);
-        if (user) loadChats();
-      })
-      .catch(() => setUser(null))
-      .finally(() => setAuthChecked(true));
+    // Restore tokens from sessionStorage (survives page refresh)
+    const hasSession = loadTokensFromSession();
+
+    if (hasSession) {
+      // Verify token still valid by calling /auth/me
+      getMe()
+        .then(user => {
+          setUser(user);
+          if (user) loadChats();
+        })
+        .catch(() => setUser(null))
+        .finally(() => setAuthChecked(true));
+    } else {
+      setAuthChecked(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -29,8 +41,7 @@ export default function App() {
     return () => window.removeEventListener("auth:logout", handler);
   }, []);
 
-  const loadChats = () =>
-    getAllChats().then(setChats).catch(console.error);
+  const loadChats = () => getAllChats().then(setChats).catch(console.error);
 
   const handleAuthSuccess = (userData) => {
     setUser(userData);
@@ -38,7 +49,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await logout().catch(() => {});
+    await logout();
     setUser(null);
     setChats([]);
     setActiveChatId(null);
@@ -46,8 +57,10 @@ export default function App() {
 
   const handleUploadSuccess = async (uploadData) => {
     const chat = await createChat({
-      bookId: uploadData.book_id, bookName: uploadData.filename,
-      totalPages: uploadData.total_pages, totalChunks: uploadData.total_chunks,
+      bookId:      uploadData.book_id,
+      bookName:    uploadData.filename,
+      totalPages:  uploadData.total_pages,
+      totalChunks: uploadData.total_chunks,
     });
     await loadChats();
     setActiveChatId(chat.chat_id);
@@ -70,9 +83,7 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return <AuthPage onAuthSuccess={handleAuthSuccess} />;
-  }
+  if (!user) return <AuthPage onAuthSuccess={handleAuthSuccess} />;
 
   const activeChat = chats.find(c => c.chat_id === activeChatId) || null;
 

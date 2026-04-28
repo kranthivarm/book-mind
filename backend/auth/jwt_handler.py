@@ -73,24 +73,24 @@ def decode_refresh_token(token: str) -> str:
         raise HTTPException(status_code=401, detail="Refresh token expired. Please log in again.")
 
 
-#   Cookie helpers
+# #   Cookie helpers
 
-def set_auth_cookies(response: Response, user_id: str):
-    access_token  = create_access_token(user_id)
-    refresh_token = create_refresh_token(user_id)
+# def set_auth_cookies(response: Response, user_id: str):
+#     access_token  = create_access_token(user_id)
+#     refresh_token = create_refresh_token(user_id)
 
-    response.set_cookie(
-        key="access_token", value=access_token,
-        httponly=True, secure=settings.COOKIE_SECURE, samesite="lax",
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
-    response.set_cookie(
-        key="refresh_token", value=refresh_token,
-        httponly=True, secure=settings.COOKIE_SECURE, samesite="lax",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-    )
+#     response.set_cookie(
+#         key="access_token", value=access_token,
+#         httponly=True, secure=settings.COOKIE_SECURE, samesite="lax",
+#         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+#     )
+#     response.set_cookie(
+#         key="refresh_token", value=refresh_token,
+#         httponly=True, secure=settings.COOKIE_SECURE, samesite="lax",
+#         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+#     )
 
 
-def clear_auth_cookies(response: Response):
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
+# def clear_auth_cookies(response: Response):
+#     response.delete_cookie("access_token")
+#     response.delete_cookie("refresh_token")

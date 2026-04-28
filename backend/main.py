@@ -21,10 +21,10 @@ app = FastAPI(title="BookMind API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",                       # local
-        "https://bookmind-frontend.onrender.com"       # production
+        #"http://13.62.54.109" ,
+        "http://bookmind-frontend.s3-website.eu-north-1.amazonaws.com"
     ],
-    allow_credentials=True,   # REQUIRED for cookies to be sent cross-origin
+    allow_credentials=False,   # REQUIRED for cookies to be sent cross-origin
     allow_methods=["*"],
     allow_headers=["*"],
 )
