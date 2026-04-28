@@ -1,15 +1,12 @@
+const BASE_URL = "http://13.62.54.109/api";
 
-
-const BASE_URL = "http://13.62.54.109/api";   
- 
+//   Token store  
 let _accessToken  = null;
 let _refreshToken = null;
 
 export function setTokens(access, refresh) {
   _accessToken  = access;
   _refreshToken = refresh;
-  // Persist across page refresh using sessionStorage
-  // sessionStorage is cleared when tab closes — reasonable security tradeoff
   if (access)  sessionStorage.setItem("bm_at", access);
   if (refresh) sessionStorage.setItem("bm_rt", refresh);
 }
@@ -22,51 +19,45 @@ export function clearTokens() {
 }
 
 export function loadTokensFromSession() {
-  // Called once on app mount to restore session after page refresh
   _accessToken  = sessionStorage.getItem("bm_at");
   _refreshToken = sessionStorage.getItem("bm_rt");
   return !!_accessToken;
 }
 
-export function hasTokens() {
-  return !!_accessToken;
-}
+export function hasTokens() { return !!_accessToken; }
 
+
+//   Core fetch wrapper with auto token refresh  
 async function apiFetch(url, options = {}, retry = true) {
   const headers = {
     "Content-Type": "application/json",
     ...options.headers,
   };
-
-  // Attach Bearer token to every request
-  if (_accessToken) {
-    headers["Authorization"] = `Bearer ${_accessToken}`;
-  }
+  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
 
   const res = await fetch(url, { ...options, headers });
 
-  // Auto-refresh on 401
   if (res.status === 401 && retry && _refreshToken) {
     const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ refresh_token: _refreshToken }),
     });
-
     if (refreshRes.ok) {
       const data = await refreshRes.json();
       setTokens(data.access_token, data.refresh_token || _refreshToken);
-      return apiFetch(url, options, false);  // retry with new token
+      return apiFetch(url, options, false);
     } else {
       clearTokens();
       window.dispatchEvent(new Event("auth:logout"));
       throw new Error("Session expired. Please log in again.");
     }
   }
-
   return res;
 }
 
+
+//  Auth  
 
 export async function register(email, username, password) {
   const res = await fetch(`${BASE_URL}/auth/register`, {
@@ -92,9 +83,7 @@ export async function login(email, password) {
   return data.user;
 }
 
-export async function logout() {
-  clearTokens();
-}
+export async function logout() { clearTokens(); }
 
 export async function getMe() {
   if (!_accessToken) return null;
@@ -102,13 +91,28 @@ export async function getMe() {
     const res = await apiFetch(`${BASE_URL}/auth/me`);
     if (!res.ok) return null;
     return res.json();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 
+//   Upload  
+// Uses XMLHttpRequest for progress events.
+// Manually attaches Bearer token since apiFetch only wraps fetch().
+
 export async function uploadBook(file, onProgress) {
+  // If token is expired, try to refresh BEFORE starting the upload
+  // (XHR doesn't support our auto-refresh logic)
+  if (_refreshToken) {
+    try {
+      const testRes = await apiFetch(`${BASE_URL}/auth/me`);
+      if (!testRes.ok && testRes.status === 401) {
+        throw new Error("Not authenticated");
+      }
+    } catch {
+      throw new Error("Session expired. Please log in again.");
+    }
+  }
+
   const formData = new FormData();
   formData.append("file", file);
 
@@ -121,24 +125,46 @@ export async function uploadBook(file, onProgress) {
     });
 
     xhr.addEventListener("load", () => {
-      const data = JSON.parse(xhr.responseText);
-      xhr.status === 201 ? resolve(data) : reject(new Error(data.detail || "Upload failed"));
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (xhr.status === 201) {
+          resolve(data);
+        } else {
+          reject(new Error(data.detail || `Upload failed (${xhr.status})`));
+        }
+      } catch {
+        reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText}`));
+      }
     });
 
-    xhr.addEventListener("error", () => reject(new Error("Network error.")));
+    xhr.addEventListener("error", () =>
+      reject(new Error("Network error. Check if backend is running."))
+    );
 
+    xhr.addEventListener("timeout", () =>
+      reject(new Error("Upload timed out. File may be too large."))
+    );
+
+    xhr.timeout = 300000; // 5 minute timeout for large PDFs
     xhr.open("POST", `${BASE_URL}/upload`);
-    // Attach token manually for XHR (no apiFetch here)
+
+    // Attach Bearer token — critical, without this → 401
     if (_accessToken) xhr.setRequestHeader("Authorization", `Bearer ${_accessToken}`);
+
     xhr.send(formData);
   });
 }
 
 
+//   Chats  
+
 export async function createChat({ bookId, bookName, totalPages, totalChunks }) {
   const res = await apiFetch(`${BASE_URL}/chats`, {
     method: "POST",
-    body:   JSON.stringify({ book_id: bookId, book_name: bookName, total_pages: totalPages, total_chunks: totalChunks }),
+    body: JSON.stringify({
+      book_id: bookId, book_name: bookName,
+      total_pages: totalPages, total_chunks: totalChunks,
+    }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || "Failed to create chat");
@@ -164,13 +190,15 @@ export async function deleteChat(chatId) {
 export async function generateQuiz(bookId, topic, numQuestions = 5) {
   const res = await apiFetch(`${BASE_URL}/quiz`, {
     method: "POST",
-    body:   JSON.stringify({ book_id: bookId, topic, num_questions: numQuestions }),
+    body: JSON.stringify({ book_id: bookId, topic, num_questions: numQuestions }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || "Failed to generate quiz");
   return data;
 }
 
+
+//   Streaming query  
 
 export async function streamQuestion(bookId, question, chatId, callbacks) {
   const { onStatus, onToken, onSources, onDone, onError } = callbacks;
